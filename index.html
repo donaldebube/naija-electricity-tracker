@@ -962,21 +962,16 @@ function buildAreaMap() {
 async function loadAreas() {
   document.getElementById('loadingBanner').classList.add('show');
   try {
-    const cached = sessionStorage.getItem('nl_areas_cache');
-    if (cached) {
-      AREAS = JSON.parse(cached).map(normalizeArea);
-      buildAreaMap(); renderQuickChips();
-      document.getElementById('loadingBanner').classList.remove('show');
-    }
-    const res = await fetch(SB_URL + '/rest/v1/areas?select=*&order=name.asc', {
+    // Always fetch fresh from Supabase — no session cache so live_* fields are always current
+    const res = await fetch(SB_URL + '/rest/v1/areas?select=*&order=name.asc&is_active=neq.false', {
       headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
     });
     if (!res.ok) throw new Error('fetch failed');
     AREAS = (await res.json()).map(normalizeArea);
-    buildAreaMap(); renderQuickChips();
-    try { sessionStorage.setItem('nl_areas_cache', JSON.stringify(AREAS)); } catch(e) {}
+    buildAreaMap();
+    renderQuickChips();
   } catch(err) {
-    if (!AREAS.length) showToast('Could not load areas. Check connection.');
+    showToast('Could not load areas — check your connection.');
   }
   document.getElementById('loadingBanner').classList.remove('show');
 }
@@ -1194,56 +1189,74 @@ function renderDiscoInfo(area) {
 
 // ─── SHOW AREA ────────────────────────────────────────────────────────────────
 async function showArea(area) {
+  // Show the panel immediately with known data
   currentArea = area;
   document.getElementById('emptyState').classList.remove('show');
   document.getElementById('resultArea').className = 'result-area visible';
   document.getElementById('resName').textContent = area.name;
   document.getElementById('resLocation').textContent = (area.lga||'') + (area.lga?' · ':'') + area.state;
-  document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(area));
-  document.getElementById('resChips').innerHTML = `<span class="chip">${area.disco}</span><span class="chip">${area.feeder||''}</span><span class="chip">${area.state}</span>`;
-  document.getElementById('sHours').textContent = area.avgH;
-  document.getElementById('confFill').style.width = (area.conf||50) + '%';
-  document.getElementById('confPct').textContent = (area.conf||50) + '%';
   document.getElementById('resInfo').textContent = area.info;
   document.getElementById('formAreaName').textContent = area.name;
   document.getElementById('sVotes').textContent = '—';
+  document.getElementById('sReports').textContent = '—';
+  // Show a loading state for the dynamic values
+  document.getElementById('sHours').textContent = '...';
+  document.getElementById('sHours').classList.remove('live');
+  document.getElementById('confFill').style.width = '0%';
+  document.getElementById('confPct').textContent = '';
+  document.getElementById('confLabel').textContent = 'Loading...';
+  document.getElementById('resBadge').innerHTML = '<div class="status-badge" style="background:rgba(255,255,255,0.05);border:1px solid var(--border2);color:var(--text3)"><span class="sdot" style="background:var(--text3)"></span>Loading...</div>';
+  document.getElementById('resChips').innerHTML = `<span class="chip">${area.disco}</span><span class="chip">${area.feeder||''}</span><span class="chip">${area.state}</span>`;
+  document.getElementById('reportsList').innerHTML = '<div class="no-reports">Loading reports...</div>';
+  document.getElementById('historyList').innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">Loading...</div>';
   renderDiscoInfo(area);
   generateCaptcha();
   updateRateIndicator(area.key);
-  // reset slider
   document.getElementById('hoursSlider').value = 0;
   document.getElementById('hoursVal').textContent = '—';
   document.getElementById('hoursHint').textContent = 'Drag to set hours';
-
   document.getElementById('setupBanner').classList.add('show');
 
   if (SB_URL && SB_KEY) {
     supabaseReady = true;
     document.getElementById('setupBanner').classList.remove('show');
     try {
-      // Fetch fresh area data — gets latest live_avg_hours, live_status etc from DB trigger
-      const freshArea = await sbFetch(`areas?key=eq.${encodeURIComponent(area.key)}&select=*&limit=1`);
-      if (freshArea && freshArea.length > 0) {
-        currentArea = normalizeArea(freshArea[0]);
+      // Fetch fresh area + reports in parallel — always from Supabase, never from cache
+      const [freshAreaRes, reportsRes] = await Promise.all([
+        sbFetch(`areas?key=eq.${encodeURIComponent(area.key)}&select=*&limit=1`),
+        sbFetch(`reports?area_key=eq.${encodeURIComponent(area.key)}&order=created_at.desc&limit=50`)
+      ]);
+
+      // Update area with fresh live_* values from DB trigger
+      if (freshAreaRes && freshAreaRes.length > 0) {
+        currentArea = normalizeArea(freshAreaRes[0]);
         document.getElementById('resChips').innerHTML = `<span class="chip">${currentArea.disco}</span><span class="chip">${currentArea.feeder||''}</span><span class="chip">${currentArea.state}</span>`;
-        document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(currentArea));
       }
-      // Fetch reports — Supabase is the single source of truth
-      const remote = await sbFetch(`reports?area_key=eq.${encodeURIComponent(area.key)}&order=created_at.desc&limit=50`);
-      const data = remote || [];
-      // Only use Supabase reports — no local merge for consistency
+
+      // Render reports — Supabase only, no local mixing
+      const data = reportsRes || [];
       renderReports(currentArea, data);
       renderHistory(data);
+
     } catch(e) {
       console.warn('Fetch failed, using local fallback:', e);
-      // Offline fallback — use local reports
+      // Offline fallback only
       const localReports = getLocalReports(area.key);
+      document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(area));
+      document.getElementById('sHours').textContent = area.avgH;
+      document.getElementById('confFill').style.width = (area.conf||50) + '%';
+      document.getElementById('confPct').textContent = (area.conf||50) + '%';
+      document.getElementById('confLabel').textContent = 'Historical estimate (offline)';
       renderReports(area, localReports);
       renderHistory(localReports);
     }
   } else {
-    // No Supabase — local only mode
+    // No Supabase configured
     const localReports = getLocalReports(area.key);
+    document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(area));
+    document.getElementById('sHours').textContent = area.avgH;
+    document.getElementById('confFill').style.width = (area.conf||50) + '%';
+    document.getElementById('confPct').textContent = (area.conf||50) + '%';
     renderReports(area, localReports);
     renderHistory(localReports);
   }
@@ -1444,6 +1457,8 @@ function showToast(msg){
 if(SB_URL)document.getElementById('sbUrl').value=SB_URL;
 if(SB_KEY)document.getElementById('sbKey').value=SB_KEY;
 if(SB_URL&&SB_KEY){supabaseReady=true;document.getElementById('setupBanner').classList.remove('show');}
+// Clear any old session/local caches on load so fresh data always comes from Supabase
+try { sessionStorage.removeItem('nl_areas_cache'); } catch(e) {}
 loadAreas();
 generateCaptcha();
 
