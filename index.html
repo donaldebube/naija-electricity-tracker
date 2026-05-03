@@ -982,7 +982,18 @@ async function loadAreas() {
 }
 
 function normalizeArea(a) {
-  return { ...a, avgH: a.avg_hours || a.avgH || '?h', conf: a.confidence || a.conf || 50, info: a.info || '' };
+  return {
+    ...a,
+    avgH:       a.avg_hours || a.avgH || '?h',
+    conf:       a.confidence || a.conf || 50,
+    info:       a.info || '',
+    // live fields from DB trigger (authoritative — based on ALL devices' reports)
+    liveAvgH:   a.live_avg_hours != null ? a.live_avg_hours : null,
+    liveStatus: a.live_status    || null,
+    liveConf:   a.live_confidence != null ? a.live_confidence : null,
+    reportCount:a.report_count   || 0,
+    lastReport: a.last_report_at || null,
+  };
 }
 
 function renderQuickChips() {
@@ -1038,34 +1049,76 @@ function calcAvgHours(reports) {
 }
 
 function updateStats(reports, area) {
-  // Confidence
-  const result = calculateConfidence(reports, area.conf||area.confidence||50, area.status||'unknown');
-  document.getElementById('confFill').style.width = result.pct + '%';
-  document.getElementById('confPct').textContent = result.pct + '%';
-  const fill = document.getElementById('confFill');
-  fill.style.background = result.status==='on'?'var(--green)':result.status==='off'?'var(--red)':'var(--amber)';
-  const label = document.getElementById('confLabel');
-  label.textContent = result.source==='live'
-    ? result.count+' report'+(result.count!==1?'s':'')+' agree'
-    : 'Based on historical data'+(result.count>0?' ('+result.count+' report'+(result.count!==1?'s':'')+')':'');
-  if (result.source==='live') document.getElementById('resBadge').innerHTML = statusBadgeHTML(result.status);
+  const hoursEl  = document.getElementById('sHours');
+  const fill     = document.getElementById('confFill');
+  const label    = document.getElementById('confLabel');
+  const pctEl    = document.getElementById('confPct');
 
-  // Avg hours — from reports if available, else from DB
-  const hoursEl = document.getElementById('sHours');
-  const liveAvg = calcAvgHours(reports);
-  if (liveAvg !== null) {
-    hoursEl.textContent = liveAvg + 'h';
+  // ── Avg hours ──────────────────────────────────────────────────────────────
+  // Priority: 1) DB live_avg_hours (trigger-calculated from ALL devices)
+  //           2) Calculated from in-memory merged reports
+  //           3) Static DB value
+  const dbLiveAvg   = area.liveAvgH != null ? area.liveAvgH : null;
+  const memLiveAvg  = calcAvgHours(reports);
+  const hoursCount  = reports.filter(r => r.hours_today != null).length;
+
+  if (dbLiveAvg !== null) {
+    hoursEl.textContent = dbLiveAvg + 'h';
     hoursEl.classList.add('live');
-    hoursEl.title = 'Calculated from ' + reports.filter(r=>r.hours_today!=null).length + ' community reports';
+    hoursEl.title = 'Community average — synced across all devices';
+  } else if (memLiveAvg !== null) {
+    hoursEl.textContent = memLiveAvg + 'h';
+    hoursEl.classList.add('live');
+    hoursEl.title = 'Calculated from ' + hoursCount + ' report' + (hoursCount !== 1 ? 's' : '') + ' on this device';
   } else {
     hoursEl.textContent = area.avgH || '?h';
     hoursEl.classList.remove('live');
-    hoursEl.title = 'Historical estimate';
+    hoursEl.title = 'Historical estimate — no community hours data yet';
   }
 
-  // Reports + votes count
-  document.getElementById('sReports').textContent = reports.length;
-  const totalVotes = reports.reduce((a,r) => a+(r.upvotes||0), 0);
+  // ── Confidence & status ────────────────────────────────────────────────────
+  // Priority: 1) DB live_confidence + live_status (trigger-calculated)
+  //           2) Calculated from in-memory merged reports
+  //           3) Static DB confidence value
+  const dbConf   = area.liveConf   != null ? area.liveConf   : null;
+  const dbStatus = area.liveStatus != null ? area.liveStatus : null;
+
+  let confPct, confStatus, confSource, confCount;
+
+  if (dbConf !== null && dbStatus !== null && (area.reportCount || 0) >= 3) {
+    // Use DB trigger values — most accurate, all devices included
+    confPct    = dbConf;
+    confStatus = dbStatus;
+    confSource = 'db';
+    confCount  = area.reportCount || reports.length;
+  } else {
+    // Fall back to in-memory calculation
+    const result = calculateConfidence(reports, area.conf || 50, area.status || 'unknown');
+    confPct    = result.pct;
+    confStatus = result.status;
+    confSource = result.source;
+    confCount  = result.count;
+  }
+
+  fill.style.width      = confPct + '%';
+  pctEl.textContent     = confPct + '%';
+  fill.style.background = confStatus === 'on' ? 'var(--green)' : confStatus === 'off' ? 'var(--red)' : 'var(--amber)';
+
+  if (confSource === 'db') {
+    label.textContent = confCount + ' report' + (confCount !== 1 ? 's' : '') + ' agree · all devices';
+    document.getElementById('resBadge').innerHTML = statusBadgeHTML(confStatus);
+  } else if (confSource === 'live') {
+    label.textContent = confCount + ' report' + (confCount !== 1 ? 's' : '') + ' agree';
+    document.getElementById('resBadge').innerHTML = statusBadgeHTML(confStatus);
+  } else {
+    label.textContent = 'Based on historical data' + (confCount > 0 ? ' (' + confCount + ' report' + (confCount !== 1 ? 's' : '') + ')' : '');
+  }
+
+  // ── Report count + votes ───────────────────────────────────────────────────
+  // Use DB report_count if available (includes all devices), else in-memory length
+  const totalCount = (area.reportCount && area.reportCount > reports.length) ? area.reportCount : reports.length;
+  document.getElementById('sReports').textContent = totalCount;
+  const totalVotes = reports.reduce((a, r) => a + (r.upvotes || 0), 0);
   document.getElementById('sVotes').textContent = totalVotes || 0;
 }
 
@@ -1171,13 +1224,21 @@ async function showArea(area) {
     supabaseReady = true;
     document.getElementById('setupBanner').classList.remove('show');
     try {
+      // Fetch fresh area data first — gets latest live_avg_hours, live_status etc from DB trigger
+      const freshArea = await sbFetch(`areas?key=eq.${encodeURIComponent(area.key)}&select=*&limit=1`);
+      if (freshArea && freshArea.length > 0) {
+        currentArea = normalizeArea(freshArea[0]);
+        // Update chips in case feeder changed
+        document.getElementById('resChips').innerHTML = `<span class="chip">${currentArea.disco}</span><span class="chip">${currentArea.feeder||''}</span><span class="chip">${currentArea.state}</span>`;
+      }
+      // Then fetch reports
       const remote = await sbFetch(`reports?area_key=eq.${encodeURIComponent(area.key)}&order=created_at.desc&limit=50`);
       const data = remote || [];
       const localIds = new Set(localReports.map(r=>r.id));
       const merged = [...localReports, ...data.filter(r=>!localIds.has(r.id))];
-      renderReports(area, merged);
+      renderReports(currentArea, merged);
       renderHistory(merged);
-    } catch(e) { console.warn('Reports fetch failed:', e); }
+    } catch(e) { console.warn('Reports/area fetch failed:', e); }
   }
 }
 
