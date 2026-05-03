@@ -535,14 +535,35 @@ textarea { resize: none; height: 78px; margin-bottom: 8px; line-height: 1.5; }
 /* EMPTY */
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 48px 20px 40px;
   color: var(--muted);
   display: none;
+  max-width: 640px;
+  margin: 0 auto;
 }
 .empty-state.show { display: block; }
 .empty-icon { margin: 0 auto 12px; opacity: .3; }
-.empty-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-.empty-sub { font-size: 13px; }
+.empty-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+.empty-sub { font-size: 13px; margin-bottom: 28px; }
+.suggest-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  text-align: left;
+  margin-top: 4px;
+}
+.suggest-heading { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.suggest-intro { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
+.sug-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sug-field { display: flex; flex-direction: column; gap: 5px; }
+.sug-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+.sug-req { color: var(--red); }
+.sug-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.sug-status { font-size: 13px; margin-top: 10px; min-height: 18px; }
+.sug-status.ok { color: var(--green-dark); font-weight: 500; }
+.sug-status.err { color: #b91c1c; }
+@media (max-width: 500px) { .sug-form-grid { grid-template-columns: 1fr; } }
 
 /* FOOTER */
 footer {
@@ -613,7 +634,7 @@ footer {
   </div>
   <div style="display:flex;align-items:center;gap:10px">
     <div class="nav-pill"><div class="pulse-dot"></div>Live reports</div>
-    <button class="btn-secondary" style="font-size:12px;padding:5px 12px" onclick="document.getElementById('configModal').classList.add('open')">Connect DB</button>
+    <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--green-dark);background:var(--green-light);padding:4px 10px;border-radius:20px;font-weight:500"><div class="pulse-dot"></div>Database connected</div>
   </div>
 </nav>
 
@@ -626,7 +647,7 @@ footer {
       <ol>
         <li>Go to <a href="https://supabase.com" target="_blank">supabase.com</a> and create a free account</li>
         <li>Create a new project (choose any name e.g. "naija-light")</li>
-        <li>Go to <strong>SQL Editor</strong> and run: <code>CREATE TABLE reports (id uuid default gen_random_uuid() primary key, area_key text, status text, role text, nickname text, message text, upvotes int default 0, created_at timestamptz default now());</code></li>
+        <li>Go to <strong>SQL Editor</strong> and run the two SQL blocks from the README (creates <code>reports</code> and <code>suggestions</code> tables with Row Level Security)</li>
         <li>Go to <strong>Settings → API</strong> and copy your Project URL and anon key below</li>
       </ol>
     </div>
@@ -757,7 +778,67 @@ footer {
   <div class="empty-state" id="emptyState">
     <svg class="empty-icon" width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1.5"/><path d="M24 16v8M24 32v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <div class="empty-title">Area not found</div>
-    <div class="empty-sub">Try a different spelling or a nearby major town.</div>
+    <div class="empty-sub">Try a different spelling or search a nearby major town.</div>
+
+    <div class="suggest-card" id="suggestCard">
+      <div class="suggest-heading">Don't see your area? Suggest it.</div>
+      <p class="suggest-intro">Help grow NaijaLight by submitting basic info about your area. It will be reviewed and added to the app.</p>
+      <div class="sug-form-grid">
+        <div class="sug-field">
+          <label class="sug-label">Area / town name <span class="sug-req">*</span></label>
+          <input type="text" id="sugName" placeholder="e.g. Oke-Ado" maxlength="60"/>
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">State <span class="sug-req">*</span></label>
+          <select id="sugState">
+            <option value="">Select state...</option>
+            <option>Abia State</option><option>Adamawa State</option><option>Akwa Ibom State</option>
+            <option>Anambra State</option><option>Bauchi State</option><option>Bayelsa State</option>
+            <option>Benue State</option><option>Borno State</option><option>Cross River State</option>
+            <option>Delta State</option><option>Ebonyi State</option><option>Edo State</option>
+            <option>Ekiti State</option><option>Enugu State</option><option>FCT Abuja</option>
+            <option>Gombe State</option><option>Imo State</option><option>Jigawa State</option>
+            <option>Kaduna State</option><option>Kano State</option><option>Katsina State</option>
+            <option>Kebbi State</option><option>Kogi State</option><option>Kwara State</option>
+            <option>Lagos State</option><option>Nasarawa State</option><option>Niger State</option>
+            <option>Ogun State</option><option>Ondo State</option><option>Osun State</option>
+            <option>Oyo State</option><option>Plateau State</option><option>Rivers State</option>
+            <option>Sokoto State</option><option>Taraba State</option><option>Yobe State</option>
+            <option>Zamfara State</option>
+          </select>
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">LGA</label>
+          <input type="text" id="sugLga" placeholder="e.g. Ibadan South-West LGA" maxlength="80"/>
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">DisCo serving this area</label>
+          <select id="sugDisco">
+            <option value="">Not sure / select...</option>
+            <option value="EKEDC">EKEDC — Eko (Lagos Island)</option>
+            <option value="IKEDC">IKEDC — Ikeja Electric (Lagos Mainland)</option>
+            <option value="IBEDC">IBEDC — Ibadan (South West)</option>
+            <option value="AEDC">AEDC — Abuja (FCT, Niger, Nasarawa)</option>
+            <option value="EEDC">EEDC — Enugu (South East)</option>
+            <option value="BEDC">BEDC — Benin (Edo, Delta, Ondo)</option>
+            <option value="PHEDC">PHEDC — Port Harcourt (South South)</option>
+            <option value="KAEDCO">KAEDCO — Kaduna (North West)</option>
+            <option value="KANO">KANO — Kano DisCo (Kano, Katsina, Jigawa)</option>
+            <option value="YEDC">YEDC — Yola (North East)</option>
+            <option value="JED">JED — Jos (Plateau, Bauchi)</option>
+          </select>
+        </div>
+      </div>
+      <div class="sug-field" style="margin-top:8px">
+        <label class="sug-label">Typical power situation <span class="sug-req">*</span></label>
+        <textarea id="sugDesc" placeholder="Describe the area's usual electricity situation — e.g. 'Usually 4–6 hours daily, better in the GRA than the market area...'" style="height:80px;margin-bottom:0"></textarea>
+      </div>
+      <div class="sug-actions">
+        <button class="btn-submit" id="sugSubmitBtn" style="font-size:13px;padding:9px 20px">Submit suggestion</button>
+        <span class="form-note">Suggestions are reviewed before being added to the app.</span>
+      </div>
+      <div class="sug-status" id="sugStatus"></div>
+    </div>
   </div>
 </div>
 
@@ -766,8 +847,8 @@ footer {
 
 <script>
 // ─── SUPABASE CONFIG ────────────────────────────────────────────────────────
-let SB_URL = localStorage.getItem('nl_sb_url') || '';
-let SB_KEY = localStorage.getItem('nl_sb_key') || '';
+let SB_URL = localStorage.getItem('nl_sb_url') || 'https://daqysmjolkpfrhvoodzc.supabase.co';
+let SB_KEY = localStorage.getItem('nl_sb_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhcXlzbWpvbGtwZnJodm9vZHpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MTY3MTYsImV4cCI6MjA5MzM5MjcxNn0.jcC7fck1LhMyGNDHTmMKfnx2WLIxrUzMGgy42UkpwCk';
 let supabaseReady = false;
 
 function saveSupabaseConfig() {
@@ -1380,7 +1461,14 @@ function doSearch(q) {
   if (matches.length === 1) { showArea(matches[0]); hideSuggestions(); return; }
   if (matches.length > 1) { showSuggestions(matches.slice(0,8)); return; }
   document.getElementById('resultArea').className = 'result-area';
-  document.getElementById('emptyState').classList.add('show');
+  const emptyEl = document.getElementById('emptyState');
+  emptyEl.classList.add('show');
+  // Pre-fill the suggest form with the searched term
+  const nameField = document.getElementById('sugName');
+  if (nameField && q) {
+    const pretty = q.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').split(',')[0].trim();
+    nameField.value = pretty;
+  }
   hideSuggestions();
 }
 
@@ -1564,6 +1652,70 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
   showToast('Report submitted. Thank you!');
 });
 
+// ─── SUGGEST MISSING AREA ────────────────────────────────────────────────────
+async function submitSuggestion(suggestion) {
+  if (!supabaseReady) return false;
+  const res = await fetch(SB_URL + '/rest/v1/suggestions', {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify(suggestion)
+  });
+  return res.ok;
+}
+
+function saveLocalSuggestion(sug) {
+  try {
+    const existing = JSON.parse(localStorage.getItem('nl_suggestions') || '[]');
+    existing.unshift({ ...sug, submitted_at: new Date().toISOString() });
+    localStorage.setItem('nl_suggestions', JSON.stringify(existing.slice(0, 20)));
+  } catch(e) {}
+}
+
+document.getElementById('sugSubmitBtn').addEventListener('click', async function() {
+  const name    = document.getElementById('sugName').value.trim();
+  const state   = document.getElementById('sugState').value;
+  const lga     = document.getElementById('sugLga').value.trim();
+  const disco   = document.getElementById('sugDisco').value;
+  const desc    = document.getElementById('sugDesc').value.trim();
+  const statusEl = document.getElementById('sugStatus');
+
+  if (!name) { statusEl.className = 'sug-status err'; statusEl.textContent = 'Please enter the area name.'; return; }
+  if (!state) { statusEl.className = 'sug-status err'; statusEl.textContent = 'Please select a state.'; return; }
+  if (desc.length < 10) { statusEl.className = 'sug-status err'; statusEl.textContent = 'Please add a short description (min 10 chars).'; return; }
+
+  this.disabled = true;
+  this.textContent = 'Submitting...';
+  statusEl.className = 'sug-status';
+  statusEl.textContent = '';
+
+  const suggestion = { name, state, lga: lga || null, disco: disco || null, description: desc };
+
+  let saved = false;
+  if (supabaseReady) {
+    saved = await submitSuggestion(suggestion);
+  }
+  if (!saved) {
+    saveLocalSuggestion(suggestion);
+  }
+
+  this.disabled = false;
+  this.textContent = 'Submit suggestion';
+  document.getElementById('sugName').value = '';
+  document.getElementById('sugState').value = '';
+  document.getElementById('sugLga').value = '';
+  document.getElementById('sugDisco').value = '';
+  document.getElementById('sugDesc').value = '';
+  statusEl.className = 'sug-status ok';
+  statusEl.textContent = saved
+    ? 'Suggestion received! It will be reviewed and added soon.'
+    : 'Saved locally — will sync when database is connected. Thank you!';
+});
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -1575,7 +1727,7 @@ function showToast(msg) {
 // pre-fill supabase fields if already saved
 if (SB_URL) document.getElementById('sbUrl').value = SB_URL;
 if (SB_KEY) document.getElementById('sbKey').value = SB_KEY;
-if (SB_URL && SB_KEY) supabaseReady = true;
+if (SB_URL && SB_KEY) { supabaseReady = true; document.getElementById("setupBanner").classList.remove("show"); }
 </script>
 </body>
 </html>
