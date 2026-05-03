@@ -517,6 +517,28 @@ textarea { resize: none; height: 78px; margin-bottom: 8px; line-height: 1.5; }
 .toast.show { transform: translateX(-50%) translateY(0); }
 
 /* SUPABASE NOTICE */
+.loading-banner {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.loading-banner.show { display: flex; }
+.loading-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .setup-banner {
   background: var(--amber-light);
   border: 1px solid #fcd34d;
@@ -679,6 +701,10 @@ footer {
 </div>
 
 <div class="main">
+  <div class="loading-banner" id="loadingBanner">
+    <div class="loading-spinner"></div>
+    Loading areas from database...
+  </div>
   <div class="setup-banner" id="setupBanner">
     <strong>Running in local mode.</strong> Reports are saved to your browser only. <a href="#" onclick="document.getElementById('configModal').classList.add('open');return false">Connect a free Supabase database</a> to share reports with everyone visiting this page.
   </div>
@@ -918,375 +944,71 @@ const DISCOS = {
   JED: { full: 'Jos Electricity Distribution Company', coverage: 'Plateau, Bauchi, Gombe (parts)', contact: '073-461-010', states: 'North Central' },
 };
 
-const AREAS = [
-  // ── LAGOS (EKEDC + IKEDC) ─────────────────────────────────────────────────
-  {key:'lekki-lagos',name:'Lekki',lga:'Eti-Osa LGA',state:'Lagos State',disco:'EKEDC',feeder:'Lekki 33kV',avgH:'8h',status:'unstable',conf:74,info:'Lekki is a prime coastal area in Lagos, one of the fastest-growing real estate zones in Nigeria. Served by EKEDC, supply averages 6–9 hours with frequent evening interruptions. Phase 1 and Admiralty Way receive more stable power. The Lekki-Epe expressway corridor can go 24+ hrs without supply during maintenance.'},
-  {key:'victoria-island-lagos',name:'Victoria Island',lga:'Eti-Osa LGA',state:'Lagos State',disco:'EKEDC',feeder:'VI 33kV',avgH:'10h',status:'on',conf:88,info:'Victoria Island is Lagos\'s commercial heart, home to major banks, multinationals and embassies. EKEDC prioritises this feeder given commercial importance. Supply typically runs 8–12 hours daily, making it one of the most reliable zones in Lagos.'},
-  {key:'ikeja-lagos',name:'Ikeja',lga:'Ikeja LGA',state:'Lagos State',disco:'IKEDC',feeder:'Ikeja 33kV',avgH:'9h',status:'on',conf:82,info:'Ikeja, Lagos State capital, is served by Ikeja Electric (IKEDC). As the state capital and home to the GRA, Allen Avenue and computer village, it receives above-average supply. GRA and Maryland areas are notably better-served than Oshodi and parts of Agege.'},
-  {key:'surulere-lagos',name:'Surulere',lga:'Surulere LGA',state:'Lagos State',disco:'IKEDC',feeder:'Surulere 33kV',avgH:'7h',status:'on',conf:71,info:'Surulere is a densely populated residential area on Lagos mainland. Supply from IKEDC averages 6–8 hours but is inconsistent, with frequent 12–24 hour outages especially around Aguda and Itire corridors. National Stadium area sometimes benefits from priority feeder attention.'},
-  {key:'agege-lagos',name:'Agege',lga:'Agege LGA',state:'Lagos State',disco:'IKEDC',feeder:'Agege 33kV',avgH:'5h',status:'off',conf:68,info:'Agege is a high-density commercial and residential suburb of Lagos. IKEDC supply here is among the least reliable in the city, averaging just 4–6 hours. Markets like Dopemu and Cement are frequently affected by overloaded feeders.'},
-  {key:'badagry-lagos',name:'Badagry',lga:'Badagry LGA',state:'Lagos State',disco:'EKEDC',feeder:'Badagry 33kV',avgH:'4h',status:'off',conf:65,info:'Badagry is a historic coastal town on the far western edge of Lagos. Being a peripheral area, EKEDC supply is notably poor — averaging 3–5 hours. The town is known for long multi-day outages. Many residents rely heavily on generators and solar.'},
-  {key:'ajah-lagos',name:'Ajah',lga:'Eti-Osa LGA',state:'Lagos State',disco:'EKEDC',feeder:'Ajah 33kV',avgH:'7h',status:'unstable',conf:70,info:'Ajah is a rapidly developing suburb along the Lekki-Epe expressway. Power supply from EKEDC is moderate, with Sangotedo and Igbo-efon neighbourhoods experiencing more instability than the Abraham Adesanya GRA corridor.'},
-  {key:'alimosho-lagos',name:'Alimosho',lga:'Alimosho LGA',state:'Lagos State',disco:'IKEDC',feeder:'Ipaja 33kV',avgH:'5h',status:'off',conf:69,info:'Alimosho is Nigeria\'s most populous LGA, spanning Ipaja, Egbeda, Akowonjo and Dopemu. IKEDC supply is strained by the massive population density. Average daily supply is around 4–6 hours, with frequent extended outages.'},
+// ─── AREAS — loaded from Supabase ───────────────────────────────────────────
+let AREAS = [];
+let areaMap = {};
+const QUICK_KEYS = ['lekki-lagos','wuse-abuja','enugu-gra','bodija-ibadan','benin-city-edo','port-harcourt-gra','kano-gra','jos-plateau'];
+
+function buildAreaMap() {
+  areaMap = {};
+  AREAS.forEach(a => {
+    areaMap[a.key] = a;
+    areaMap[a.name.toLowerCase()] = a;
+  });
+}
+
+function showLoadingState() {
+  document.getElementById('loadingBanner').classList.add('show');
+}
+function hideLoadingState() {
+  document.getElementById('loadingBanner').classList.remove('show');
+}
+
+async function loadAreas() {
+  showLoadingState();
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/areas?select=*&order=name.asc', {
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+    });
+    if (!res.ok) throw new Error('fetch failed');
+    AREAS = await res.json();
+    // normalize field names (db uses avg_hours, confidence; js used avgH, conf)
+    AREAS = AREAS.map(a => ({
+      ...a,
+      avgH: a.avg_hours || a.avgH || '?h',
+      conf: a.confidence || a.conf || 50,
+      info: a.info || ''
+    }));
+    buildAreaMap();
+    renderQuickChips();
+    hideLoadingState();
+    // cache in sessionStorage for fast reloads within same session
+    try { sessionStorage.setItem('nl_areas_cache', JSON.stringify(AREAS)); } catch(e) {}
+  } catch(err) {
+    // fallback: try sessionStorage cache
+    try {
+      const cached = sessionStorage.getItem('nl_areas_cache');
+      if (cached) {
+        AREAS = JSON.parse(cached);
+        buildAreaMap();
+        renderQuickChips();
+        hideLoadingState();
+        showToast('Using cached area data.');
+        return;
+      }
+    } catch(e) {}
+    hideLoadingState();
+    showToast('Could not load areas. Check your connection.');
+  }
+}
+
+function renderQuickChips() {
+  document.getElementById('quickAreas').innerHTML = QUICK_KEYS.map(k => {
+    const a = AREAS.find(x => x.key === k);
+    return a ? `<button class="quick-chip" onclick="quickSearch('${k}')">${a.name}</button>` : '';
+  }).join('');
+}
 
-  // ABUJA
-  {key:'wuse-abuja',name:'Wuse',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Wuse 33kV',avgH:'11h',status:'on',conf:88,info:'Wuse is Abuja\'s premier commercial zone. AEDC prioritises this feeder for diplomatic and commercial reasons. Zones 4 and 5 enjoy the most reliable supply, while Zone 1 shares industrial load feeders. Overall among the best-served areas nationally.'},
-  {key:'garki-abuja',name:'Garki',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Garki 33kV',avgH:'10h',status:'on',conf:85,info:'Garki houses many federal ministries and embassies in Abuja. AEDC supply is relatively consistent here, averaging 9–11 hours. Area 1–11 zones are generally reliable. Weekend supply tends to be longer due to lower institutional demand.'},
-  {key:'maitama-abuja',name:'Maitama',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Maitama 33kV',avgH:'13h',status:'on',conf:91,info:'Maitama is Abuja\'s most exclusive residential district, housing State House and top government officials. It receives priority feeder allocation from AEDC. Power supply is among the most consistent in Nigeria, often exceeding 12 hours daily.'},
-  {key:'asokoro-abuja',name:'Asokoro',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Asokoro 33kV',avgH:'12h',status:'on',conf:89,info:'Asokoro is an upscale district bordering the Presidential Villa. AEDC treats this feeder as priority. Supply consistently runs 10–14 hours daily, with rare extended outages.'},
-  {key:'kubwa-abuja',name:'Kubwa',lga:'Bwari Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Kubwa 33kV',avgH:'6h',status:'unstable',conf:67,info:'Kubwa is Abuja\'s largest satellite town, with a rapidly growing population. AEDC supply here is notably less reliable than the city centre — averaging 5–7 hours. Demand frequently exceeds feeder capacity, leading to regular load-shedding.'},
-  {key:'karu-abuja',name:'Karu / Nyanya',lga:'Nasarawa State fringe',state:'FCT Abuja',disco:'AEDC',feeder:'Karu 33kV',avgH:'5h',status:'off',conf:63,info:'Karu-Nyanya is a high-density satellite settlement straddling FCT and Nasarawa State. AEDC supply is poor, averaging 4–6 hours. The area frequently experiences multi-day outages and is heavily dependent on generators.'},
-
-  // KANO
-  {key:'kano-gra',name:'Kano GRA',lga:'Municipal LGA',state:'Kano State',disco:'KANO',feeder:'GRA 33kV',avgH:'8h',status:'on',conf:78,info:'Kano GRA is the most premium residential zone in Kano, serving senior civil servants and professionals. KEDCO supply here is above average for Kano, typically 7–9 hours. The feeder is maintained more reliably than inner-city zones.'},
-  {key:'sabon-gari-kano',name:'Sabon-Gari',lga:'Fagge LGA',state:'Kano State',disco:'KANO',feeder:'Sabon-Gari 33kV',avgH:'6h',status:'on',conf:72,info:'Sabon-Gari (strangers quarter) is Kano\'s most diverse commercial and residential hub, hosting large southern Nigerian communities. KEDCO supply is moderate, averaging 5–7 hours. The market area and Lagos Street corridor are often prioritised.'},
-  {key:'nassarawa-kano',name:'Nassarawa',lga:'Nassarawa LGA',state:'Kano State',disco:'KANO',feeder:'Nassarawa 33kV',avgH:'5h',status:'unstable',conf:62,info:'Nassarawa is a large, densely populated district of Kano. KEDCO supply struggles with feeder overload, averaging 4–6 hours. Extended weekend outages are common. The area around Katsina Road receives slightly better supply.'},
-
-  // OYO / IBADAN
-  {key:'bodija-ibadan',name:'Bodija',lga:'Ibadan North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Bodija 33kV',avgH:'7h',status:'on',conf:76,info:'Bodija is a middle-class residential area in Ibadan known for its market and educational institutions. IBEDC supply averages 6–8 hours. The estate areas around Bodija receive more reliable supply than the market perimeter.'},
-  {key:'jericho-ibadan',name:'Jericho',lga:'Ibadan North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Jericho 33kV',avgH:'8h',status:'on',conf:80,info:'Jericho is one of Ibadan\'s most prestigious residential areas. IBEDC supply here is among the most reliable in Ibadan, averaging 7–9 hours. The GRA sections enjoy more consistent power than the Jericho extension.'},
-  {key:'ring-road-ibadan',name:'Ring Road',lga:'Ibadan South-West LGA',state:'Oyo State',disco:'IBEDC',feeder:'Ring Road 33kV',avgH:'5h',status:'off',conf:65,info:'Ring Road is a high-traffic commercial area in Ibadan. IBEDC supply is inconsistent, with frequent tripping due to overloaded distribution lines. Average supply is 4–6 hours.'},
-  {key:'ogbomoso-oyo',name:'Ogbomoso',lga:'Ogbomoso North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Ogbomoso 33kV',avgH:'5h',status:'unstable',conf:64,info:'Ogbomoso is the second-largest city in Oyo State. IBEDC supply averages 4–6 hours, with the main town centre receiving slightly better supply than the outlying areas. Major market days often coincide with outages due to high demand.'},
-
-  // OGUN
-  {key:'abeokuta-ogun',name:'Abeokuta',lga:'Abeokuta North/South LGA',state:'Ogun State',disco:'IBEDC',feeder:'Abeokuta 33kV',avgH:'6h',status:'on',conf:70,info:'Abeokuta, Ogun State capital, sits at the foot of Olumo Rock. IBEDC supply averages 5–7 hours. The GRA and Ibara housing estate areas get more reliable supply than Kuto, Lafenwa and Sapon markets.'},
-  {key:'sagamu-ogun',name:'Sagamu',lga:'Sagamu LGA',state:'Ogun State',disco:'IBEDC',feeder:'Sagamu 33kV',avgH:'6h',status:'on',conf:69,info:'Sagamu is a key commercial town along the Lagos-Ibadan expressway. IBEDC supply is moderate, averaging 5–7 hours. Being on the Lagos-Ibadan corridor gives it slightly better infrastructure than rural Ogun.'},
-  {key: 'arepo-ogun',name: 'Arepo',lga: 'Obafemi-Owode LGA',state: 'Ogun State',disco: 'IBEDC',feeder: 'Arepo 33kV',avgH: '6h',status: 'unstable',conf: 65,
-  info: 'Arepo is a fast-growing residential and commercial town in Ogun State along the Lagos-Ibadan expressway. Served by IBEDC, supply averages 5–7 hours but is inconsistent due to the high population influx from Lagos. The expressway corridor and newer estate developments tend to get slightly better supply than the older Arepo town core.'},
-
-  // OSUN
-  {key:'osogbo-osun',name:'Osogbo',lga:'Osogbo LGA',state:'Osun State',disco:'IBEDC',feeder:'Osogbo 33kV',avgH:'6h',status:'on',conf:71,info:'Osogbo is the capital of Osun State and home to the UNESCO-listed Osun-Osogbo Sacred Grove. IBEDC supply averages 5–7 hours. The State Secretariat area and GRA enjoy better supply than markets and outer estates.'},
-  {key:'ile-ife-osun',name:'Ile-Ife',lga:'Ife Central LGA',state:'Osun State',disco:'IBEDC',feeder:'Ile-Ife 33kV',avgH:'5h',status:'unstable',conf:65,info:'Ile-Ife is the spiritual heartland of the Yoruba and home to Obafemi Awolowo University. IBEDC supply averages 4–6 hours, with the OAU campus sometimes getting slightly better supply through university arrangements.'},
-
-  // EKITI
-  {key:'ado-ekiti',name:'Ado-Ekiti',lga:'Ado-Ekiti LGA',state:'Ekiti State',disco:'BEDC',feeder:'Ado 33kV',avgH:'6h',status:'on',conf:73,info:'Ado-Ekiti is the capital of Ekiti State. BEDC supply averages 5–7 hours. The Government House area and Ajilosun receive better supply than Oja-Oba and Basiri markets. BEDC and IBEDC dispute some areas of Ekiti jurisdiction.'},
-  {key:'ido-ekiti',name:'Ido-Ekiti',lga:'Ido-Osi LGA',state:'Ekiti State',disco:'IBEDC',feeder:'Ido 33kV',avgH:'6h',status:'on',conf:82,info:'Ido-Ekiti is a small town in Ido-Osi LGA, Ekiti State, served by IBEDC. Supply typically averages 4–7 hours per day from the Ido 33kV injection substation. Rural areas around Ido-Ekiti experience longer outages than the main town centre.'},
-
-  // ONDO
-  {key:'akure-ondo',name:'Akure',lga:'Akure South LGA',state:'Ondo State',disco:'BEDC',feeder:'Akure 33kV',avgH:'7h',status:'on',conf:74,info:'Akure is the capital of Ondo State, known for its cocoa industry and Ondo State University of Science and Technology. BEDC supply averages 6–8 hours. The GRA and Ijapo estate areas receive more consistent power than Oja-Oba and Isikan areas.'},
-
-  // ENUGU
-  {key:'enugu-gra',name:'Enugu GRA',lga:'Enugu North LGA',state:'Enugu State',disco:'EEDC',feeder:'GRA 33kV',avgH:'9h',status:'on',conf:80,info:'Enugu GRA is the premium residential district of Enugu, serving top civil servants and professionals. EEDC provides preferential load scheduling here. Supply runs 8–10 hours daily on average, one of the better-served zones in the South East.'},
-  {key:'independence-layout-enugu',name:'Independence Layout',lga:'Enugu South LGA',state:'Enugu State',disco:'EEDC',feeder:'Independence 33kV',avgH:'7h',status:'on',conf:77,info:'Independence Layout is a popular middle-class residential area in Enugu. EEDC supply is reasonably consistent, averaging 6–8 hours. It shares feeder capacity with some commercial areas which can cause peak-hour voltage drops.'},
-  {key:'coal-camp-enugu',name:'Coal Camp',lga:'Enugu North LGA',state:'Enugu State',disco:'EEDC',feeder:'Coal Camp 33kV',avgH:'5h',status:'unstable',conf:62,info:'Coal Camp is a historic, densely-populated workers\' district in Enugu. EEDC supply here is below city average, running 4–6 hours. Aging infrastructure from the colonial mining era makes the feeder prone to faults.'},
-
-  // ANAMBRA
-  {key:'awka-anambra',name:'Awka',lga:'Awka South LGA',state:'Anambra State',disco:'EEDC',feeder:'Awka 33kV',avgH:'6h',status:'on',conf:72,info:'Awka, Anambra State capital, is a fast-growing administrative town. EEDC supply averages 5–7 hours. Government House and Sir Emeka Offor Drive corridor tend to receive better supply than Amawbia and Okpuno.'},
-  {key:'onitsha-anambra',name:'Onitsha',lga:'Onitsha North/South LGA',state:'Anambra State',disco:'EEDC',feeder:'Onitsha 33kV',avgH:'5h',status:'unstable',conf:67,info:'Onitsha houses Nigeria\'s largest market complex. The massive commercial load means EEDC feeders are chronically overloaded. Supply averages 4–6 hours, with market-day demand causing frequent tripping. Bridge Head and Upper Iweka are particularly affected.'},
-  {key:'nnewi-anambra',name:'Nnewi',lga:'Nnewi North LGA',state:'Anambra State',disco:'EEDC',feeder:'Nnewi 33kV',avgH:'6h',status:'on',conf:73,info:'Nnewi is Nigeria\'s industrial hub in the South East, known for motorcycle and auto-parts manufacturing. EEDC supply averages 5–7 hours. Industrial estates sometimes negotiate better supply schedules with EEDC, making some zones more reliable.'},
-
-  // IMO
-  {key:'owerri-imo',name:'Owerri',lga:'Owerri Municipal',state:'Imo State',disco:'EEDC',feeder:'Owerri 33kV',avgH:'6h',status:'on',conf:71,info:'Owerri is the capital of Imo State, known as the "city of life" for its vibrant nightlife. EEDC supply averages 5–7 hours. New Owerri and around the Government House tend to be more reliable. Old Owerri and markets around Douglas Road see more outages.'},
-
-  // ABIA
-  {key:'aba-abia',name:'Aba',lga:'Aba North/South LGA',state:'Abia State',disco:'EEDC',feeder:'Aba 33kV',avgH:'5h',status:'off',conf:63,info:'Aba is the commercial capital of Abia and one of Nigeria\'s key textile and manufacturing cities. EEDC supply is challenged by the industrial load, averaging 4–6 hours. Factory zones and Ariaria market are particularly prone to supply disruptions.'},
-  {key:'umuahia-abia',name:'Umuahia',lga:'Umuahia North LGA',state:'Abia State',disco:'EEDC',feeder:'Umuahia 33kV',avgH:'6h',status:'on',conf:68,info:'Umuahia is the capital of Abia State. EEDC supply averages 5–7 hours. As a smaller city, the feeder load is more manageable than Aba. The GRA and Government House areas receive more reliable supply.'},
-
-  // DELTA
-  {key:'asaba-delta',name:'Asaba',lga:'Oshimili South LGA',state:'Delta State',disco:'BEDC',feeder:'Asaba 33kV',avgH:'7h',status:'on',conf:75,info:'Asaba, Delta State capital, sits on the western bank of the Niger. BEDC supply averages 6–8 hours. Okpanam Road and GRA areas fare better than the core commercial centre. The proximity to the Shiroro dam transmission line sometimes benefits supply.'},
-  {key:'warri-delta',name:'Warri',lga:'Warri South LGA',state:'Delta State',disco:'BEDC',feeder:'Warri 33kV',avgH:'6h',status:'unstable',conf:66,info:'Warri is an oil-rich city in Delta State. Despite abundant energy resources nearby, BEDC supply averages 5–7 hours. GRA and Effurun areas get better supply than Igbudu and Ekurede-Urhobo. Vandalism of distribution infrastructure is a recurring challenge.'},
-
-  // EDO
-  {key:'benin-city-edo',name:'Benin City',lga:'Oredo LGA',state:'Edo State',disco:'BEDC',feeder:'Ring Road 33kV',avgH:'7h',status:'unstable',conf:71,info:'Benin City, Edo State capital, is served by BEDC. Supply averages 6–8 hours. GRA and Ugbor Road corridor are more reliable. Uselu, Oredo and parts of Ikpoba-Okha face more instability. The ancient city\'s aging grid infrastructure contributes to distribution losses.'},
-
-  // RIVERS
-  {key:'port-harcourt-gra',name:'Port Harcourt GRA',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'GRA 33kV',avgH:'9h',status:'on',conf:80,info:'Port Harcourt GRA is one of the most well-serviced areas in South South Nigeria. PHEDC supply averages 8–10 hours. The oil companies and embassies located here create economic pressure on PHEDC to maintain the feeder reliably.'},
-  {key:'rumuola-ph',name:'Rumuola',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'Rumuola 33kV',avgH:'6h',status:'on',conf:70,info:'Rumuola is a residential area in Port Harcourt popular with oil company staff. PHEDC supply is moderate, averaging 5–7 hours. The Rumuola-Rumuibekwe corridor can see extended outages during rainy season due to flooding damage.'},
-  {key:'obio-akpor',name:'Obio-Akpor',lga:'Obio-Akpor LGA',state:'Rivers State',disco:'PHEDC',feeder:'Rumuola 33kV',avgH:'5h',status:'unstable',conf:64,info:'Obio-Akpor is one of Nigeria\'s fastest-growing LGAs, a sprawling suburb of Port Harcourt. PHEDC supply is strained by the explosive population growth. Supply averages 4–6 hours, with Rumuola and Rumuomasi being among the better-served communities.'},
-
-  // AKWA IBOM
-  {key:'uyo-akwa-ibom',name:'Uyo',lga:'Uyo LGA',state:'Akwa Ibom State',disco:'PHEDC',feeder:'Uyo 33kV',avgH:'7h',status:'on',conf:74,info:'Uyo, Akwa Ibom State capital, is often cited as one of Nigeria\'s cleanest and most well-planned cities. PHEDC supply averages 6–8 hours. The State Secretariat and GRA receive more reliable supply, with Ewet Housing and Itam industrial areas seeing more variance.'},
-
-  // CROSS RIVER
-  {key:'calabar-cross-river',name:'Calabar',lga:'Calabar Municipal',state:'Cross River State',disco:'PHEDC',feeder:'Calabar 33kV',avgH:'7h',status:'on',conf:73,info:'Calabar, Cross River State capital, is known as the "Canaan City" and hosts Nigeria\'s biggest Christmas festival. PHEDC supply averages 6–8 hours. Calabar Municipality and GRA areas are better served. Calabar South sees more frequent outages.'},
-
-  // BAYELSA
-  {key:'yenagoa-bayelsa',name:'Yenagoa',lga:'Yenagoa LGA',state:'Bayelsa State',disco:'PHEDC',feeder:'Yenagoa 33kV',avgH:'5h',status:'unstable',conf:62,info:'Yenagoa, Bayelsa State capital in the Niger Delta, faces significant electricity challenges. PHEDC supply is among the least reliable in South South, averaging 4–6 hours. The terrain and flooding vulnerabilities contribute to frequent infrastructure damage.'},
-
-  // KADUNA
-  {key:'kaduna-gra',name:'Kaduna GRA',lga:'Kaduna North LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'GRA 33kV',avgH:'8h',status:'on',conf:77,info:'Kaduna GRA is the premium residential zone of Kaduna, home to high-ranking military and government officials. KAEDCO supply here averages 7–9 hours, significantly better than the rest of the city. Security concerns have been a challenge for distribution infrastructure in recent years.'},
-  {key:'barnawa-kaduna',name:'Barnawa',lga:'Chikun LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Barnawa 33kV',avgH:'6h',status:'on',conf:70,info:'Barnawa is a middle-class residential area in southern Kaduna. KAEDCO supply averages 5–7 hours. As one of the newer planned estates, infrastructure is relatively newer than the old city. Power cuts tend to follow the general Kaduna State load-shedding schedule.'},
-  {key:'kaduna-central',name:'Kaduna Central',lga:'Kaduna North LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Kaduna Central 33kV',avgH:'5h',status:'unstable',conf:63,info:'Kaduna Central and the old city area are densely populated with mixed residential and commercial use. KAEDCO supply is inconsistent here, averaging 4–6 hours with commercial overload frequently causing outages.'},
-
-  // KEBBI
-  {key:'birnin-kebbi',name:'Birnin Kebbi',lga:'Birnin Kebbi LGA',state:'Kebbi State',disco:'KAEDCO',feeder:'Birnin Kebbi 33kV',avgH:'5h',status:'unstable',conf:60,info:'Birnin Kebbi, capital of Kebbi State, is served by KAEDCO. Supply averages 4–6 hours, reflecting the challenges of electricity distribution in the North West. The state capital areas receive slightly better priority than rural communities.'},
-
-  // SOKOTO
-  {key:'sokoto-city',name:'Sokoto City',lga:'Sokoto North LGA',state:'Sokoto State',disco:'KAEDCO',feeder:'Sokoto 33kV',avgH:'5h',status:'on',conf:65,info:'Sokoto City, the Seat of the Caliphate, is served by KAEDCO. Supply averages 4–6 hours. The Government House and Central Business District get slightly better supply. Sokoto is one of the hottest cities in Nigeria, making power supply for cooling a critical community need.'},
-
-  // ZAMFARA
-  {key:'gusau-zamfara',name:'Gusau',lga:'Gusau LGA',state:'Zamfara State',disco:'KAEDCO',feeder:'Gusau 33kV',avgH:'4h',status:'off',conf:58,info:'Gusau, Zamfara State capital, is one of Nigeria\'s least electrified state capitals. KAEDCO supply averages 3–5 hours. Security challenges in the state have disrupted transmission infrastructure, worsening an already difficult situation.'},
-
-  // KATSINA
-  {key:'katsina-city',name:'Katsina City',lga:'Katsina LGA',state:'Katsina State',disco:'KANO',feeder:'Katsina 33kV',avgH:'6h',status:'on',conf:68,info:'Katsina City, birthplace of President Buhari, is served by KEDCO. Supply averages 5–7 hours. Government and official quarters receive priority. The weekly market (Rimi) area and densely packed Sabuwar Kasuwa see more supply disruptions.'},
-
-  // JIGAWA
-  {key:'dutse-jigawa',name:'Dutse',lga:'Dutse LGA',state:'Jigawa State',disco:'KANO',feeder:'Dutse 33kV',avgH:'5h',status:'on',conf:63,info:'Dutse, Jigawa State capital, is one of Nigeria\'s smaller state capitals. KEDCO supply averages 4–6 hours. As a planned capital city, the GRA and administrative areas have relatively newer infrastructure than the old settlement areas.'},
-
-  // PLATEAU
-  {key:'jos-plateau',name:'Jos',lga:'Jos North/South LGA',state:'Plateau State',disco:'JED',feeder:'Jos 33kV',avgH:'7h',status:'on',conf:75,info:'Jos, "City of Peace" on the Plateau, is served by JED (Jos Electricity Distribution). The cooler climate reduces air-conditioning load, contributing to relatively better supply of 6–8 hours average. Rayfield and GRA areas are more reliable than Rantya and Bukuru.'},
-  {key:'bukuru-plateau',name:'Bukuru',lga:'Jos South LGA',state:'Plateau State',disco:'JED',feeder:'Bukuru 33kV',avgH:'5h',status:'unstable',conf:65,info:'Bukuru is an industrial suburb of Jos, home to tin mining legacy industries. JED supply is challenged by aging industrial infrastructure. Average supply is 4–6 hours, with frequent voltage instability due to mixed residential-industrial feeder load.'},
-
-  // BAUCHI
-  {key:'bauchi-city',name:'Bauchi',lga:'Bauchi LGA',state:'Bauchi State',disco:'JED',feeder:'Bauchi 33kV',avgH:'5h',status:'on',conf:66,info:'Bauchi, gateway to Yankari National Park, is served by JED. Supply averages 4–6 hours. Government Hill and GRA areas receive better supply. The seasonal influx of tourists to Yankari can indirectly affect power priorities in the city.'},
-
-  // GOMBE
-  {key:'gombe-city',name:'Gombe',lga:'Gombe LGA',state:'Gombe State',disco:'YEDC',feeder:'Gombe 33kV',avgH:'5h',status:'on',conf:64,info:'Gombe, the "Jewel of the Savannah," is served by YEDC (Yola Electric). Supply averages 4–6 hours. Federal Government Girls College and Government House corridors get slightly better supply. The dry season heat drives up cooling demand significantly.'},
-
-  // ADAMAWA
-  {key:'yola-adamawa',name:'Yola',lga:'Yola North LGA',state:'Adamawa State',disco:'YEDC',feeder:'Yola 33kV',avgH:'5h',status:'unstable',conf:61,info:'Yola, Adamawa State capital, is headquarters of YEDC. Despite housing the utility\'s HQ, supply averages 4–6 hours. Doubeli and Jambutu areas are better served. The frequent Benue River flooding can damage distribution infrastructure.'},
-
-  // TARABA
-  {key:'jalingo-taraba',name:'Jalingo',lga:'Jalingo LGA',state:'Taraba State',disco:'YEDC',feeder:'Jalingo 33kV',avgH:'4h',status:'off',conf:58,info:'Jalingo, Taraba State capital, faces significant power supply challenges. YEDC supply averages 3–5 hours. As a geographically remote state capital, transmission distances contribute to losses. Many households rely almost entirely on generators or solar panels.'},
-
-  // BORNO
-  {key:'maiduguri-borno',name:'Maiduguri',lga:'Maiduguri Metropolitan',state:'Borno State',disco:'YEDC',feeder:'Maiduguri 33kV',avgH:'5h',status:'unstable',conf:61,info:'Maiduguri, birthplace of Boko Haram insurgency which damaged infrastructure significantly. YEDC supply has been recovering gradually, now averaging 4–6 hours. The Gwange, Old Maiduguri and Bolori areas face more challenges than Gamboru New Extension and GRA.'},
-
-  // YOBE
-  {key:'damaturu-yobe',name:'Damaturu',lga:'Damaturu LGA',state:'Yobe State',disco:'YEDC',feeder:'Damaturu 33kV',avgH:'4h',status:'off',conf:57,info:'Damaturu, Yobe State capital, is one of the most challenging electricity environments in Nigeria due to past insurgency damage to infrastructure. YEDC supply averages 3–5 hours, with many communities going days without power.'},
-
-  // NIGER
-  {key:'minna-niger',name:'Minna',lga:'Chanchaga LGA',state:'Niger State',disco:'AEDC',feeder:'Minna 33kV',avgH:'5h',status:'on',conf:65,info:'Minna, Niger State capital and home to former President Babangida, is served by AEDC. Supply averages 4–6 hours. Bosso and Maitumbi areas receive more consistent supply than Tudun Fulani. The city\'s proximity to Shiroro Dam is an ironic contrast to its poor supply.'},
-
-  // KWARA
-  {key:'ilorin-kwara',name:'Ilorin',lga:'Ilorin West LGA',state:'Kwara State',disco:'IBEDC',feeder:'Ilorin 33kV',avgH:'7h',status:'on',conf:73,info:'Ilorin, Kwara State capital, sits at the crossroads of North and South Nigeria. IBEDC supply averages 6–8 hours — higher than many North Central cities. GRA and around Kwara Hotel area are better served. Tanke and parts of Fate road experience more instability.'},
-
-  // KOGI
-  {key:'lokoja-kogi',name:'Lokoja',lga:'Lokoja LGA',state:'Kogi State',disco:'AEDC',feeder:'Lokoja 33kV',avgH:'5h',status:'unstable',conf:64,info:'Lokoja, where Rivers Niger and Benue meet, is served by AEDC. Supply averages 4–6 hours. Zango, Felele and GRA areas get more consistent supply. The annual flooding of low-lying areas regularly damages distribution equipment, worsening supply.'},
-
-  // NASSARAWA
-  {key:'lafia-nasarawa',name:'Lafia',lga:'Lafia LGA',state:'Nasarawa State',disco:'AEDC',feeder:'Lafia 33kV',avgH:'5h',status:'on',conf:64,info:'Lafia, Nasarawa State capital, is served by AEDC. Supply averages 4–6 hours. The relative proximity to Abuja means infrastructure quality is somewhat better than more remote North Central towns.'},
-
-  // BENUE
-  {key:'makurdi-benue',name:'Makurdi',lga:'Makurdi LGA',state:'Benue State',disco:'AEDC',feeder:'Makurdi 33kV',avgH:'5h',status:'unstable',conf:63,info:'Makurdi, Benue State capital on the Benue River, is served by AEDC. Supply averages 4–6 hours, with frequent disruptions during rainy season from flooding. North Bank and Wadata areas receive slightly better supply than Wurukum and High Level.'},
-
-  // ANAMBRA
-  {key:'ekwulobia-anambra',name:'Ekwulobia',lga:'Aguata LGA',state:'Anambra State',disco:'EEDC',feeder:'Ekwulobia 33kV',avgH:'5h',status:'on',conf:68,info:'Ekwulobia is the headquarters of Aguata LGA and a growing commercial town in Anambra. EEDC supply averages 4–6 hours. As a smaller town, feeder loads are more manageable than Onitsha.'},
-
-  // EBONYI
-  {key:'abakaliki-ebonyi',name:'Abakaliki',lga:'Abakaliki LGA',state:'Ebonyi State',disco:'EEDC',feeder:'Abakaliki 33kV',avgH:'5h',status:'on',conf:67,info:'Abakaliki, capital of Nigeria\'s youngest state Ebonyi, is known for its rice and salt. EEDC supply averages 4–6 hours. Mile 50 and the new Government House axis get more reliable supply than the traditional core of the city.'},
-
-  // ── MORE LAGOS ────────────────────────────────────────────────────────────
-  {key:'ikorodu-lagos',name:'Ikorodu',lga:'Ikorodu LGA',state:'Lagos State',disco:'IKEDC',feeder:'Ikorodu 33kV',avgH:'6h',status:'on',conf:69,info:'Ikorodu is a large satellite town on the Lagos Lagoon. IKEDC supply averages 5–7 hours. Ijede, Igbogbo and Imota communities often face longer outages than the town centre around Ikorodu Road.'},
-  {key:'epe-lagos',name:'Epe',lga:'Epe LGA',state:'Lagos State',disco:'EKEDC',feeder:'Epe 33kV',avgH:'5h',status:'unstable',conf:63,info:'Epe is a fishing town at the eastern end of the Lagos Lagoon. EKEDC supply is below the Lagos average at 4–6 hours. Being at the end of the Lekki-Epe corridor means feeder voltage is often low.'},
-  {key:'ojo-lagos',name:'Ojo',lga:'Ojo LGA',state:'Lagos State',disco:'EKEDC',feeder:'Ojo 33kV',avgH:'5h',status:'off',conf:65,info:'Ojo on the Lagos coast hosts the Nigerian Army and several industrial plants. EKEDC supply averages 4–6 hours. Ojo barracks and Alaba International Market area experience frequent load shedding.'},
-  {key:'mushin-lagos',name:'Mushin',lga:'Mushin LGA',state:'Lagos State',disco:'IKEDC',feeder:'Mushin 33kV',avgH:'5h',status:'unstable',conf:64,info:'Mushin is one of Lagos\'s most densely populated areas. IKEDC supply here is strained — averaging 4–6 hours. Itire junction and Papa Ajao see particularly high outage frequency due to feeder overload.'},
-  {key:'oshodi-lagos',name:'Oshodi',lga:'Oshodi-Isolo LGA',state:'Lagos State',disco:'IKEDC',feeder:'Oshodi 33kV',avgH:'6h',status:'on',conf:70,info:'Oshodi is a major transport and commercial hub. IKEDC supply averages 5–7 hours. The International Airport Road corridor and Isolo industrial area put significant load on the feeder.'},
-  {key:'festac-lagos',name:'Festac Town',lga:'Amuwo-Odofin LGA',state:'Lagos State',disco:'EKEDC',feeder:'Festac 33kV',avgH:'7h',status:'on',conf:73,info:'Festac Town is a planned residential estate in Lagos. EKEDC supply is moderate to good at 6–8 hours. The estate\'s original planned infrastructure holds up better than unplanned areas nearby. 2nd Avenue and 21 Road tend to be most reliable.'},
-  {key:'apapa-lagos',name:'Apapa',lga:'Apapa LGA',state:'Lagos State',disco:'EKEDC',feeder:'Apapa 33kV',avgH:'8h',status:'on',conf:76,info:'Apapa houses Nigeria\'s main port complex. EKEDC treats this feeder as critical infrastructure due to port operations. Residential areas share supply with the port, giving them relatively better reliability at 7–9 hours average.'},
-  {key:'yaba-lagos',name:'Yaba',lga:'Lagos Mainland LGA',state:'Lagos State',disco:'IKEDC',feeder:'Yaba 33kV',avgH:'7h',status:'on',conf:74,info:'Yaba is Lagos\'s tech and academic hub, home to University of Lagos and several startup offices. IKEDC supply averages 6–8 hours. The tech cluster demand has pushed IKEDC to maintain this feeder more reliably than average.'},
-  {key:'gbagada-lagos',name:'Gbagada',lga:'Lagos Mainland LGA',state:'Lagos State',disco:'IKEDC',feeder:'Gbagada 33kV',avgH:'7h',status:'on',conf:72,info:'Gbagada is a middle-class residential area popular with professionals. IKEDC supply averages 6–8 hours. Phase 1 and Phase 2 estates have slightly better supply than the waterfront communities.'},
-  {key:'maryland-lagos',name:'Maryland',lga:'Kosofe LGA',state:'Lagos State',disco:'IKEDC',feeder:'Maryland 33kV',avgH:'8h',status:'on',conf:77,info:'Maryland is a busy commercial and residential axis along the Lagos-Ibadan expressway. IKEDC supply here is reliable at 7–9 hours, partly due to the commercial feeder priority around Maryland Mall and Palmgrove.'},
-  {key:'ojota-lagos',name:'Ojota',lga:'Kosofe LGA',state:'Lagos State',disco:'IKEDC',feeder:'Ojota 33kV',avgH:'6h',status:'unstable',conf:67,info:'Ojota is a bus terminal hub and residential area north of Lagos Island. IKEDC supply averages 5–7 hours. The market and transport hub activity puts heavy daytime load on the feeder.'},
-  {key:'sangotedo-lagos',name:'Sangotedo / Ajah',lga:'Eti-Osa LGA',state:'Lagos State',disco:'EKEDC',feeder:'Ajah 33kV',avgH:'6h',status:'unstable',conf:68,info:'Sangotedo and environs along the Lekki-Epe expressway are rapidly developing. EKEDC supply lags behind population growth, averaging 5–7 hours. New estates like Harmony and Abraham Adesanya GRA tend to get priority.'},
-
-  // ── ABUJA / FCT ───────────────────────────────────────────────────────────
-  {key:'wuse-abuja',name:'Wuse',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Wuse 33kV',avgH:'11h',status:'on',conf:88,info:'Wuse is Abuja\'s premier commercial zone. AEDC prioritises this feeder for diplomatic and commercial reasons. Zones 4 and 5 enjoy the most reliable supply, while Zone 1 shares industrial load feeders. Among the best-served areas nationally.'},
-  {key:'garki-abuja',name:'Garki',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Garki 33kV',avgH:'10h',status:'on',conf:85,info:'Garki houses many federal ministries and embassies in Abuja. AEDC supply is relatively consistent here, averaging 9–11 hours. Areas 1–11 are generally reliable. Weekend supply tends to be longer due to lower institutional demand.'},
-  {key:'maitama-abuja',name:'Maitama',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Maitama 33kV',avgH:'13h',status:'on',conf:91,info:'Maitama is Abuja\'s most exclusive residential district, housing State House and top government officials. It receives priority feeder allocation from AEDC. Power supply is among the most consistent in Nigeria.'},
-  {key:'asokoro-abuja',name:'Asokoro',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Asokoro 33kV',avgH:'12h',status:'on',conf:89,info:'Asokoro is an upscale district bordering the Presidential Villa. AEDC treats this feeder as priority. Supply consistently runs 10–14 hours daily.'},
-  {key:'kubwa-abuja',name:'Kubwa',lga:'Bwari Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Kubwa 33kV',avgH:'6h',status:'unstable',conf:67,info:'Kubwa is Abuja\'s largest satellite town. AEDC supply here is notably less reliable than the city centre — averaging 5–7 hours. Demand frequently exceeds feeder capacity, leading to regular load-shedding.'},
-  {key:'karu-abuja',name:'Karu / Nyanya',lga:'Nasarawa fringe',state:'FCT Abuja',disco:'AEDC',feeder:'Karu 33kV',avgH:'5h',status:'off',conf:63,info:'Karu-Nyanya is a high-density satellite straddling FCT and Nasarawa State. AEDC supply is poor, averaging 4–6 hours. Heavily dependent on generators.'},
-  {key:'lugbe-abuja',name:'Lugbe',lga:'Abuja Municipal',state:'FCT Abuja',disco:'AEDC',feeder:'Lugbe 33kV',avgH:'5h',status:'unstable',conf:64,info:'Lugbe is a growing residential area near Nnamdi Azikiwe Airport. AEDC supply averages 4–6 hours. Airport Road corridor sometimes gets better supply due to the airport proximity.'},
-  {key:'gwagwalada-abuja',name:'Gwagwalada',lga:'Gwagwalada Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Gwagwalada 33kV',avgH:'5h',status:'on',conf:63,info:'Gwagwalada is a semi-urban area council headquarters in FCT. AEDC supply averages 4–6 hours. University of Abuja area and the township council corridor get slightly better supply.'},
-  {key:'gwarimpa-abuja',name:'Gwarimpa',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Gwarimpa 33kV',avgH:'8h',status:'on',conf:79,info:'Gwarimpa is Nigeria\'s largest single housing estate, built by the federal government. AEDC supply is relatively consistent at 7–9 hours. The estate\'s dedicated infrastructure keeps it better served than surrounding Kubwa.'},
-  {key:'utako-abuja',name:'Utako',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Utako 33kV',avgH:'9h',status:'on',conf:81,info:'Utako is a mixed commercial and residential area in central Abuja. AEDC supply averages 8–10 hours. The Utako market and diplomatic proximity to Maitama gives it above-average priority.'},
-  {key:'wuye-abuja',name:'Wuye',lga:'Municipal Area Council',state:'FCT Abuja',disco:'AEDC',feeder:'Wuye 33kV',avgH:'8h',status:'on',conf:78,info:'Wuye is a residential district adjacent to Maitama. AEDC supply averages 7–9 hours. Several government agencies here contribute to feeder priority.'},
-
-  // ── KANO ─────────────────────────────────────────────────────────────────
-  {key:'kano-gra',name:'Kano GRA',lga:'Municipal LGA',state:'Kano State',disco:'KANO',feeder:'GRA 33kV',avgH:'8h',status:'on',conf:78,info:'Kano GRA is the most premium residential zone in Kano, serving senior civil servants and professionals. KEDCO supply here is above average for Kano, typically 7–9 hours.'},
-  {key:'sabon-gari-kano',name:'Sabon-Gari',lga:'Fagge LGA',state:'Kano State',disco:'KANO',feeder:'Sabon-Gari 33kV',avgH:'6h',status:'on',conf:72,info:'Sabon-Gari is Kano\'s most diverse commercial and residential hub. KEDCO supply is moderate, averaging 5–7 hours. The market area and Lagos Street corridor are often prioritised.'},
-  {key:'nassarawa-kano',name:'Nassarawa',lga:'Nassarawa LGA',state:'Kano State',disco:'KANO',feeder:'Nassarawa 33kV',avgH:'5h',status:'unstable',conf:62,info:'Nassarawa is a large, densely populated district of Kano. KEDCO supply struggles with feeder overload, averaging 4–6 hours. Extended weekend outages are common.'},
-  {key:'fagge-kano',name:'Fagge',lga:'Fagge LGA',state:'Kano State',disco:'KANO',feeder:'Fagge 33kV',avgH:'5h',status:'unstable',conf:61,info:'Fagge is the oldest commercial area of Kano. The ancient city infrastructure is aging and KEDCO supply is strained at 4–6 hours average. Textile market demand spikes during business hours.'},
-  {key:'dala-kano',name:'Dala',lga:'Dala LGA',state:'Kano State',disco:'KANO',feeder:'Dala 33kV',avgH:'4h',status:'off',conf:59,info:'Dala is a densely populated industrial suburb of Kano. KEDCO supply is poor at 3–5 hours. Groundnut processing and textile industries historically dominated but aging grid infrastructure persists.'},
-  {key:'tarauni-kano',name:'Tarauni',lga:'Tarauni LGA',state:'Kano State',disco:'KANO',feeder:'Tarauni 33kV',avgH:'5h',status:'on',conf:63,info:'Tarauni is a residential LGA in Kano. KEDCO supply averages 4–6 hours. Areas near Tarauni Quarters benefit from proximity to the GRA feeder.'},
-  {key:'ungogo-kano',name:'Ungogo',lga:'Ungogo LGA',state:'Kano State',disco:'KANO',feeder:'Ungogo 33kV',avgH:'4h',status:'off',conf:58,info:'Ungogo is a peri-urban LGA on the outskirts of Kano. KEDCO supply is minimal at 3–5 hours. Rural communities in the LGA often go days without supply.'},
-
-  // ── OYO / IBADAN ──────────────────────────────────────────────────────────
-  {key:'bodija-ibadan',name:'Bodija',lga:'Ibadan North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Bodija 33kV',avgH:'7h',status:'on',conf:76,info:'Bodija is a middle-class residential area in Ibadan. IBEDC supply averages 6–8 hours. The estate areas around Bodija receive more reliable supply than the market perimeter.'},
-  {key:'jericho-ibadan',name:'Jericho',lga:'Ibadan North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Jericho 33kV',avgH:'8h',status:'on',conf:80,info:'Jericho is one of Ibadan\'s most prestigious residential areas. IBEDC supply here is among the most reliable in Ibadan, averaging 7–9 hours. The GRA sections enjoy more consistent power.'},
-  {key:'ring-road-ibadan',name:'Ring Road',lga:'Ibadan South-West LGA',state:'Oyo State',disco:'IBEDC',feeder:'Ring Road 33kV',avgH:'5h',status:'off',conf:65,info:'Ring Road is a high-traffic commercial area in Ibadan. IBEDC supply is inconsistent at 4–6 hours, with frequent tripping due to overloaded distribution lines.'},
-  {key:'ogbomoso-oyo',name:'Ogbomoso',lga:'Ogbomoso North LGA',state:'Oyo State',disco:'IBEDC',feeder:'Ogbomoso 33kV',avgH:'5h',status:'unstable',conf:64,info:'Ogbomoso is the second-largest city in Oyo State. IBEDC supply averages 4–6 hours, with the main town centre receiving slightly better supply than outlying areas.'},
-  {key:'oyo-town',name:'Oyo Town',lga:'Oyo East LGA',state:'Oyo State',disco:'IBEDC',feeder:'Oyo 33kV',avgH:'5h',status:'on',conf:65,info:'Oyo Town was the capital of the historic Oyo Empire. IBEDC supply averages 4–6 hours. Agunrege and Oke-Sho areas are better served than the outskirts.'},
-  {key:'saki-oyo',name:'Saki',lga:'Saki West LGA',state:'Oyo State',disco:'IBEDC',feeder:'Saki 33kV',avgH:'4h',status:'off',conf:58,info:'Saki is a major town in Oke-Ogun zone of Oyo State. IBEDC supply is poor at 3–5 hours. Being far from the Ibadan transmission hub means the feeder suffers significant losses.'},
-  {key:'iseyin-oyo',name:'Iseyin',lga:'Iseyin LGA',state:'Oyo State',disco:'IBEDC',feeder:'Iseyin 33kV',avgH:'4h',status:'off',conf:57,info:'Iseyin is known for its weaving industry and Aso-Oke fabric. IBEDC supply is very limited at 3–5 hours, heavily affecting local small industries that depend on power for looms.'},
-
-  // ── OGUN ──────────────────────────────────────────────────────────────────
-  {key:'abeokuta-ogun',name:'Abeokuta',lga:'Abeokuta North/South LGA',state:'Ogun State',disco:'IBEDC',feeder:'Abeokuta 33kV',avgH:'6h',status:'on',conf:70,info:'Abeokuta, Ogun State capital, sits at the foot of Olumo Rock. IBEDC supply averages 5–7 hours. The GRA and Ibara housing estate areas get more reliable supply than Kuto and Lafenwa markets.'},
-  {key:'sagamu-ogun',name:'Sagamu',lga:'Sagamu LGA',state:'Ogun State',disco:'IBEDC',feeder:'Sagamu 33kV',avgH:'6h',status:'on',conf:69,info:'Sagamu is a key commercial town along the Lagos-Ibadan expressway. IBEDC supply is moderate at 5–7 hours. Being on the corridor gives it slightly better infrastructure than rural Ogun.'},
-  {key:'ijebu-ode-ogun',name:'Ijebu-Ode',lga:'Ijebu-Ode LGA',state:'Ogun State',disco:'IBEDC',feeder:'Ijebu-Ode 33kV',avgH:'5h',status:'on',conf:67,info:'Ijebu-Ode is the commercial hub of Ijebu Kingdom. IBEDC supply averages 4–6 hours. The central market and Oke-Sopen areas experience frequent outages during peak trading hours.'},
-  {key:'ota-ogun',name:'Ota',lga:'Ado-Odo/Ota LGA',state:'Ogun State',disco:'IBEDC',feeder:'Ota 33kV',avgH:'6h',status:'on',conf:71,info:'Ota is one of Nigeria\'s most industrialised towns, bordering Lagos. IBEDC supply averages 5–7 hours. Several multinational companies here have private substations, which somewhat buffers residential supply.'},
-  {key:'ilishan-ogun',name:'Ilishan-Remo',lga:'Ikenne LGA',state:'Ogun State',disco:'IBEDC',feeder:'Ilishan 33kV',avgH:'5h',status:'unstable',conf:62,info:'Ilishan-Remo hosts Babcock University and is in Remo division of Ogun State. IBEDC supply averages 4–6 hours. The university has a private generator backup, but the surrounding town suffers regular outages.'},
-
-  // ── OSUN ──────────────────────────────────────────────────────────────────
-  {key:'osogbo-osun',name:'Osogbo',lga:'Osogbo LGA',state:'Osun State',disco:'IBEDC',feeder:'Osogbo 33kV',avgH:'6h',status:'on',conf:71,info:'Osogbo is the capital of Osun State and home to the UNESCO-listed Sacred Grove. IBEDC supply averages 5–7 hours. State Secretariat area and GRA enjoy better supply than Oja-Oba and Isale-Osun.'},
-  {key:'ile-ife-osun',name:'Ile-Ife',lga:'Ife Central LGA',state:'Osun State',disco:'IBEDC',feeder:'Ile-Ife 33kV',avgH:'5h',status:'unstable',conf:65,info:'Ile-Ife is the spiritual heartland of the Yoruba and home to Obafemi Awolowo University. IBEDC supply averages 4–6 hours, with the OAU campus sometimes getting slightly better supply.'},
-  {key:'ilesa-osun',name:'Ilesa',lga:'Ilesa East/West LGA',state:'Osun State',disco:'IBEDC',feeder:'Ilesa 33kV',avgH:'5h',status:'on',conf:64,info:'Ilesa is the commercial capital of Ijesa land. IBEDC supply averages 4–6 hours. Imo and Ereja quarters in the town centre get relatively more consistent supply.'},
-  {key:'ede-osun',name:'Ede',lga:'Ede North LGA',state:'Osun State',disco:'IBEDC',feeder:'Ede 33kV',avgH:'5h',status:'on',conf:63,info:'Ede is a historic town near Osogbo. IBEDC supply averages 4–6 hours. The town is close to the Osogbo injection substation which gives it modest supply advantages.'},
-
-  // ── EKITI ─────────────────────────────────────────────────────────────────
-  {key:'ado-ekiti',name:'Ado-Ekiti',lga:'Ado-Ekiti LGA',state:'Ekiti State',disco:'BEDC',feeder:'Ado 33kV',avgH:'6h',status:'on',conf:73,info:'Ado-Ekiti is the capital of Ekiti State. BEDC supply averages 5–7 hours. The Government House area and Ajilosun receive better supply than Oja-Oba and Basiri markets.'},
-  {key:'ido-ekiti',name:'Ido-Ekiti',lga:'Ido-Osi LGA',state:'Ekiti State',disco:'IBEDC',feeder:'Ido 33kV',avgH:'6h',status:'on',conf:82,info:'Ido-Ekiti is a small town in Ido-Osi LGA, served by IBEDC. Supply typically averages 4–7 hours from the Ido 33kV injection substation. Rural areas experience longer outages than the town centre.'},
-  {key:'ikere-ekiti',name:'Ikere-Ekiti',lga:'Ikere LGA',state:'Ekiti State',disco:'BEDC',feeder:'Ikere 33kV',avgH:'5h',status:'unstable',conf:61,info:'Ikere-Ekiti is home to Ekiti State University (EKSU). BEDC supply averages 4–6 hours. The university campus has backup power but the surrounding Ilawe Road corridor faces frequent outages.'},
-  {key:'ijero-ekiti',name:'Ijero-Ekiti',lga:'Ijero LGA',state:'Ekiti State',disco:'BEDC',feeder:'Ijero 33kV',avgH:'4h',status:'off',conf:58,info:'Ijero-Ekiti is a hilly town in Ekiti. BEDC supply is very limited at 3–5 hours. The town\'s remote location means it is at the tail end of the feeder, receiving lower voltage and shorter supply windows.'},
-
-  // ── ONDO ──────────────────────────────────────────────────────────────────
-  {key:'akure-ondo',name:'Akure',lga:'Akure South LGA',state:'Ondo State',disco:'BEDC',feeder:'Akure 33kV',avgH:'7h',status:'on',conf:74,info:'Akure is the capital of Ondo State. BEDC supply averages 6–8 hours. The GRA and Ijapo Estate areas receive more consistent power than Oja-Oba and Isikan.'},
-  {key:'ondo-city',name:'Ondo City',lga:'Ondo West LGA',state:'Ondo State',disco:'BEDC',feeder:'Ondo 33kV',avgH:'5h',status:'on',conf:65,info:'Ondo City is the commercial hub of Ondo State\'s south. BEDC supply averages 4–6 hours. The Oke-Iro and Isola market areas see the most disruptions.'},
-  {key:'owo-ondo',name:'Owo',lga:'Owo LGA',state:'Ondo State',disco:'BEDC',feeder:'Owo 33kV',avgH:'5h',status:'unstable',conf:62,info:'Owo is a major commercial town bordering Edo State. BEDC supply averages 4–6 hours. The shared Edo-Ondo feeder territory sometimes creates supply uncertainty.'},
-  {key:'okitipupa-ondo',name:'Okitipupa',lga:'Okitipupa LGA',state:'Ondo State',disco:'BEDC',feeder:'Okitipupa 33kV',avgH:'4h',status:'off',conf:57,info:'Okitipupa is a coastal town in southern Ondo State. BEDC supply is minimal at 3–5 hours. The coastal and mangrove terrain creates infrastructure challenges for distribution.'},
-
-  // ── ENUGU ─────────────────────────────────────────────────────────────────
-  {key:'enugu-gra',name:'Enugu GRA',lga:'Enugu North LGA',state:'Enugu State',disco:'EEDC',feeder:'GRA 33kV',avgH:'9h',status:'on',conf:80,info:'Enugu GRA is the premium residential district of Enugu. EEDC provides preferential load scheduling here. Supply runs 8–10 hours daily on average.'},
-  {key:'independence-layout-enugu',name:'Independence Layout',lga:'Enugu South LGA',state:'Enugu State',disco:'EEDC',feeder:'Independence 33kV',avgH:'7h',status:'on',conf:77,info:'Independence Layout is a popular middle-class residential area in Enugu. EEDC supply is reasonably consistent, averaging 6–8 hours.'},
-  {key:'coal-camp-enugu',name:'Coal Camp',lga:'Enugu North LGA',state:'Enugu State',disco:'EEDC',feeder:'Coal Camp 33kV',avgH:'5h',status:'unstable',conf:62,info:'Coal Camp is a historic, densely-populated workers\' district in Enugu. EEDC supply averages 4–6 hours. Aging infrastructure from the colonial mining era makes the feeder prone to faults.'},
-  {key:'trans-ekulu-enugu',name:'Trans-Ekulu',lga:'Enugu East LGA',state:'Enugu State',disco:'EEDC',feeder:'Trans-Ekulu 33kV',avgH:'6h',status:'on',conf:71,info:'Trans-Ekulu is a large residential estate in Enugu. EEDC supply averages 5–7 hours. It is one of Enugu\'s better-planned residential areas with dedicated feeder infrastructure.'},
-  {key:'nsukka-enugu',name:'Nsukka',lga:'Nsukka LGA',state:'Enugu State',disco:'EEDC',feeder:'Nsukka 33kV',avgH:'5h',status:'on',conf:67,info:'Nsukka is home to the University of Nigeria (UNN). EEDC supply averages 4–6 hours. The university campus has its own substation arrangement, but the surrounding town depends on the main feeder.'},
-
-  // ── ANAMBRA ───────────────────────────────────────────────────────────────
-  {key:'awka-anambra',name:'Awka',lga:'Awka South LGA',state:'Anambra State',disco:'EEDC',feeder:'Awka 33kV',avgH:'6h',status:'on',conf:72,info:'Awka, Anambra State capital, is a fast-growing administrative town. EEDC supply averages 5–7 hours. Government House and Sir Emeka Offor Drive corridor tend to receive better supply.'},
-  {key:'onitsha-anambra',name:'Onitsha',lga:'Onitsha North/South LGA',state:'Anambra State',disco:'EEDC',feeder:'Onitsha 33kV',avgH:'5h',status:'unstable',conf:67,info:'Onitsha houses Nigeria\'s largest market complex. Massive commercial load means EEDC feeders are chronically overloaded. Supply averages 4–6 hours.'},
-  {key:'nnewi-anambra',name:'Nnewi',lga:'Nnewi North LGA',state:'Anambra State',disco:'EEDC',feeder:'Nnewi 33kV',avgH:'6h',status:'on',conf:73,info:'Nnewi is Nigeria\'s industrial hub in the South East, known for motorcycle and auto-parts manufacturing. EEDC supply averages 5–7 hours.'},
-  {key:'ekwulobia-anambra',name:'Ekwulobia',lga:'Aguata LGA',state:'Anambra State',disco:'EEDC',feeder:'Ekwulobia 33kV',avgH:'5h',status:'on',conf:68,info:'Ekwulobia is the headquarters of Aguata LGA. EEDC supply averages 4–6 hours. As a smaller town, feeder loads are more manageable than Onitsha.'},
-  {key:'agulu-anambra',name:'Agulu',lga:'Anaocha LGA',state:'Anambra State',disco:'EEDC',feeder:'Agulu 33kV',avgH:'4h',status:'unstable',conf:60,info:'Agulu, known for its lake, is in Anaocha LGA. EEDC supply is limited at 3–5 hours. The town\'s rural fringe means it receives power after more urban centres on the same feeder.'},
-
-  // ── IMO ───────────────────────────────────────────────────────────────────
-  {key:'owerri-imo',name:'Owerri',lga:'Owerri Municipal',state:'Imo State',disco:'EEDC',feeder:'Owerri 33kV',avgH:'6h',status:'on',conf:71,info:'Owerri is the capital of Imo State. EEDC supply averages 5–7 hours. New Owerri and around the Government House tend to be more reliable than Old Owerri and Douglas Road markets.'},
-  {key:'orlu-imo',name:'Orlu',lga:'Orlu LGA',state:'Imo State',disco:'EEDC',feeder:'Orlu 33kV',avgH:'5h',status:'on',conf:65,info:'Orlu is the second most populous town in Imo State. EEDC supply averages 4–6 hours. Orlu town centre and Amaifeke area have slightly better supply than the outlying communities.'},
-  {key:'okigwe-imo',name:'Okigwe',lga:'Okigwe LGA',state:'Imo State',disco:'EEDC',feeder:'Okigwe 33kV',avgH:'4h',status:'off',conf:59,info:'Okigwe sits at a strategic crossroads in Imo State. EEDC supply is limited at 3–5 hours. Being a transit town rather than an industrial centre means feeder priority is lower.'},
-
-  // ── ABIA ──────────────────────────────────────────────────────────────────
-  {key:'aba-abia',name:'Aba',lga:'Aba North/South LGA',state:'Abia State',disco:'EEDC',feeder:'Aba 33kV',avgH:'5h',status:'off',conf:63,info:'Aba is the commercial capital of Abia and one of Nigeria\'s key textile cities. EEDC supply is challenged by industrial load, averaging 4–6 hours. Ariaria market is particularly prone to supply disruptions.'},
-  {key:'umuahia-abia',name:'Umuahia',lga:'Umuahia North LGA',state:'Abia State',disco:'EEDC',feeder:'Umuahia 33kV',avgH:'6h',status:'on',conf:68,info:'Umuahia is the capital of Abia State. EEDC supply averages 5–7 hours. The GRA and Government House areas receive more reliable supply than the markets.'},
-  {key:'arochukwu-abia',name:'Arochukwu',lga:'Arochukwu LGA',state:'Abia State',disco:'EEDC',feeder:'Arochukwu 33kV',avgH:'4h',status:'off',conf:56,info:'Arochukwu is a historic town of the Aro Confederacy in Abia. EEDC supply is very limited at 3–5 hours. Remote location and sparse population make infrastructure investment challenging.'},
-
-  // ── EBONYI ────────────────────────────────────────────────────────────────
-  {key:'abakaliki-ebonyi',name:'Abakaliki',lga:'Abakaliki LGA',state:'Ebonyi State',disco:'EEDC',feeder:'Abakaliki 33kV',avgH:'5h',status:'on',conf:67,info:'Abakaliki, capital of Ebonyi State, is known for rice and salt. EEDC supply averages 4–6 hours. Mile 50 and the new Government House axis get more reliable supply.'},
-  {key:'onueke-ebonyi',name:'Onueke',lga:'Ezza South LGA',state:'Ebonyi State',disco:'EEDC',feeder:'Onueke 33kV',avgH:'4h',status:'unstable',conf:57,info:'Onueke is a developing town in Ezza South LGA. EEDC supply is very limited at 3–5 hours. The rural setting means long stretches without supply are common.'},
-
-  // ── DELTA ─────────────────────────────────────────────────────────────────
-  {key:'asaba-delta',name:'Asaba',lga:'Oshimili South LGA',state:'Delta State',disco:'BEDC',feeder:'Asaba 33kV',avgH:'7h',status:'on',conf:75,info:'Asaba, Delta State capital, sits on the western bank of the Niger. BEDC supply averages 6–8 hours. Okpanam Road and GRA areas fare better than the core commercial centre.'},
-  {key:'warri-delta',name:'Warri',lga:'Warri South LGA',state:'Delta State',disco:'BEDC',feeder:'Warri 33kV',avgH:'6h',status:'unstable',conf:66,info:'Warri is an oil-rich city in Delta State. Despite abundant energy resources nearby, BEDC supply averages 5–7 hours. GRA and Effurun areas get better supply than Igbudu.'},
-  {key:'effurun-delta',name:'Effurun',lga:'Uvwie LGA',state:'Delta State',disco:'BEDC',feeder:'Effurun 33kV',avgH:'6h',status:'on',conf:68,info:'Effurun is Warri\'s twin city and a growing commercial centre. BEDC supply averages 5–7 hours. The presence of NNPC facilities in the area creates some feeder priority.'},
-  {key:'sapele-delta',name:'Sapele',lga:'Sapele LGA',state:'Delta State',disco:'BEDC',feeder:'Sapele 33kV',avgH:'6h',status:'on',conf:67,info:'Sapele is known for its timber and plywood industry on the Ethiope River. BEDC supply averages 5–7 hours. The industrial legacy means there is some dedicated grid infrastructure.'},
-  {key:'agbor-delta',name:'Agbor',lga:'Ika South LGA',state:'Delta State',disco:'BEDC',feeder:'Agbor 33kV',avgH:'5h',status:'unstable',conf:63,info:'Agbor is a commercial town in Ika South LGA of Delta State. BEDC supply averages 4–6 hours. Market days and commercial activity drive peak loads that often trip the feeder.'},
-  {key:'ughelli-delta',name:'Ughelli',lga:'Ughelli North LGA',state:'Delta State',disco:'BEDC',feeder:'Ughelli 33kV',avgH:'6h',status:'on',conf:69,info:'Ughelli is home to NNPC gas plants and the Ughelli Power Plant (formerly NEPA). Despite hosting power generation, distribution supply is 5–7 hours average — a common Nigerian irony.'},
-
-  // ── EDO ───────────────────────────────────────────────────────────────────
-  {key:'benin-city-edo',name:'Benin City',lga:'Oredo LGA',state:'Edo State',disco:'BEDC',feeder:'Ring Road 33kV',avgH:'7h',status:'unstable',conf:71,info:'Benin City, Edo State capital, is served by BEDC. Supply averages 6–8 hours. GRA and Ugbor Road corridor are more reliable. Uselu, Oredo and parts of Ikpoba-Okha face more instability.'},
-  {key:'ekpoma-edo',name:'Ekpoma',lga:'Esan West LGA',state:'Edo State',disco:'BEDC',feeder:'Ekpoma 33kV',avgH:'5h',status:'on',conf:65,info:'Ekpoma is home to Ambrose Alli University. BEDC supply averages 4–6 hours. The university campus has backup power but the town depends entirely on BEDC supply.'},
-  {key:'auchi-edo',name:'Auchi',lga:'Etsako West LGA',state:'Edo State',disco:'BEDC',feeder:'Auchi 33kV',avgH:'5h',status:'unstable',conf:62,info:'Auchi is a multi-ethnic commercial town in northern Edo. BEDC supply averages 4–6 hours. Polytechnic Road and Central Market areas see significant demand spikes.'},
-  {key:'uromi-edo',name:'Uromi',lga:'Esan North-East LGA',state:'Edo State',disco:'BEDC',feeder:'Uromi 33kV',avgH:'4h',status:'off',conf:58,info:'Uromi is the headquarters of Esan North-East LGA. BEDC supply is limited at 3–5 hours. Remote Esan Kingdom location makes infrastructure maintenance sporadic.'},
-
-  // ── RIVERS ────────────────────────────────────────────────────────────────
-  {key:'port-harcourt-gra',name:'Port Harcourt GRA',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'GRA 33kV',avgH:'9h',status:'on',conf:80,info:'Port Harcourt GRA is one of the most well-serviced areas in South South Nigeria. PHEDC supply averages 8–10 hours. The oil companies and embassies here create economic pressure to maintain the feeder reliably.'},
-  {key:'rumuola-ph',name:'Rumuola',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'Rumuola 33kV',avgH:'6h',status:'on',conf:70,info:'Rumuola is a residential area in Port Harcourt popular with oil company staff. PHEDC supply is moderate, averaging 5–7 hours.'},
-  {key:'obio-akpor',name:'Obio-Akpor',lga:'Obio-Akpor LGA',state:'Rivers State',disco:'PHEDC',feeder:'Rumuola 33kV',avgH:'5h',status:'unstable',conf:64,info:'Obio-Akpor is one of Nigeria\'s fastest-growing LGAs. PHEDC supply is strained by explosive population growth. Supply averages 4–6 hours.'},
-  {key:'trans-amadi',name:'Trans-Amadi',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'Trans-Amadi 33kV',avgH:'7h',status:'on',conf:73,info:'Trans-Amadi is Port Harcourt\'s industrial layout hosting oil service companies. PHEDC gives this area feeder priority due to the industrial tenants. Supply averages 6–8 hours.'},
-  {key:'borikiri-ph',name:'Borikiri',lga:'Port Harcourt LGA',state:'Rivers State',disco:'PHEDC',feeder:'Creek Road 33kV',avgH:'5h',status:'unstable',conf:62,info:'Borikiri is a waterfront community in Port Harcourt. PHEDC supply is inconsistent at 4–6 hours. Flooding during rainy season regularly damages distribution equipment.'},
-  {key:'bonny-rivers',name:'Bonny Island',lga:'Bonny LGA',state:'Rivers State',disco:'PHEDC',feeder:'Bonny 33kV',avgH:'8h',status:'on',conf:75,info:'Bonny Island hosts Nigeria LNG (NLNG) and Shell operations. NLNG operates independent power generation for its facilities, and some of that power benefits the island\'s residential areas, giving it above-average supply of 7–9 hours.'},
-
-  // ── AKWA IBOM ─────────────────────────────────────────────────────────────
-  {key:'uyo-akwa-ibom',name:'Uyo',lga:'Uyo LGA',state:'Akwa Ibom State',disco:'PHEDC',feeder:'Uyo 33kV',avgH:'7h',status:'on',conf:74,info:'Uyo, Akwa Ibom State capital, is often cited as one of Nigeria\'s cleanest and most well-planned cities. PHEDC supply averages 6–8 hours. State Secretariat and GRA receive more reliable supply.'},
-  {key:'eket-akwa-ibom',name:'Eket',lga:'Eket LGA',state:'Akwa Ibom State',disco:'PHEDC',feeder:'Eket 33kV',avgH:'7h',status:'on',conf:73,info:'Eket is the oil industry hub of Akwa Ibom, hosting ExxonMobil. PHEDC supply averages 6–8 hours. ExxonMobil\'s presence and its private power arrangements positively influence local grid reliability.'},
-  {key:'ikot-ekpene-akwaibom',name:'Ikot Ekpene',lga:'Ikot Ekpene LGA',state:'Akwa Ibom State',disco:'PHEDC',feeder:'Ikot Ekpene 33kV',avgH:'5h',status:'on',conf:66,info:'Ikot Ekpene, the "Raffia City," is known for its basket weaving. PHEDC supply averages 4–6 hours. The town\'s craft industries depend on power, making outages particularly costly.'},
-
-  // ── CROSS RIVER ───────────────────────────────────────────────────────────
-  {key:'calabar-cross-river',name:'Calabar',lga:'Calabar Municipal',state:'Cross River State',disco:'PHEDC',feeder:'Calabar 33kV',avgH:'7h',status:'on',conf:73,info:'Calabar, Cross River State capital, is known as the "Canaan City." PHEDC supply averages 6–8 hours. Calabar Municipality and GRA areas are better served. Calabar South sees more outages.'},
-  {key:'ogoja-cross-river',name:'Ogoja',lga:'Ogoja LGA',state:'Cross River State',disco:'PHEDC',feeder:'Ogoja 33kV',avgH:'4h',status:'off',conf:57,info:'Ogoja is the most urbanised town in northern Cross River. PHEDC supply is very limited at 3–5 hours. Distance from the coastal transmission hub significantly affects supply quality.'},
-
-  // ── BAYELSA ───────────────────────────────────────────────────────────────
-  {key:'yenagoa-bayelsa',name:'Yenagoa',lga:'Yenagoa LGA',state:'Bayelsa State',disco:'PHEDC',feeder:'Yenagoa 33kV',avgH:'5h',status:'unstable',conf:62,info:'Yenagoa, Bayelsa State capital in the Niger Delta, faces significant electricity challenges. PHEDC supply averages 4–6 hours. The terrain and flooding vulnerabilities contribute to frequent infrastructure damage.'},
-  {key:'sagbama-bayelsa',name:'Sagbama',lga:'Sagbama LGA',state:'Bayelsa State',disco:'PHEDC',feeder:'Sagbama 33kV',avgH:'3h',status:'off',conf:52,info:'Sagbama is an LGA headquarters accessible mainly by water. PHEDC supply is minimal at 2–4 hours. The riverine terrain makes grid infrastructure extremely difficult and costly to maintain.'},
-
-  // ── KADUNA ────────────────────────────────────────────────────────────────
-  {key:'kaduna-gra',name:'Kaduna GRA',lga:'Kaduna North LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'GRA 33kV',avgH:'8h',status:'on',conf:77,info:'Kaduna GRA is the premium residential zone of Kaduna. KAEDCO supply here averages 7–9 hours. Security concerns have been a challenge for distribution infrastructure in recent years.'},
-  {key:'barnawa-kaduna',name:'Barnawa',lga:'Chikun LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Barnawa 33kV',avgH:'6h',status:'on',conf:70,info:'Barnawa is a middle-class residential area in southern Kaduna. KAEDCO supply averages 5–7 hours. Power cuts tend to follow the general Kaduna State load-shedding schedule.'},
-  {key:'kaduna-central',name:'Kaduna Central',lga:'Kaduna North LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Kaduna Central 33kV',avgH:'5h',status:'unstable',conf:63,info:'Kaduna Central and the old city area are densely populated. KAEDCO supply is inconsistent, averaging 4–6 hours with commercial overload frequently causing outages.'},
-  {key:'zaria-kaduna',name:'Zaria',lga:'Zaria LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Zaria 33kV',avgH:'5h',status:'on',conf:66,info:'Zaria is Kaduna\'s historic city, home to Ahmadu Bello University (ABU). KAEDCO supply averages 4–6 hours. The ABU campus has its own power arrangement. Tudun Wada and Sabon Gari see more residential supply.'},
-  {key:'kafanchan-kaduna',name:'Kafanchan',lga:'Jema\'a LGA',state:'Kaduna State',disco:'KAEDCO',feeder:'Kafanchan 33kV',avgH:'4h',status:'off',conf:58,info:'Kafanchan is a major town in southern Kaduna, a historic railway junction. KAEDCO supply is poor at 3–5 hours. The town is in the transition zone between KAEDCO and JED service areas.'},
-
-  // ── KEBBI ─────────────────────────────────────────────────────────────────
-  {key:'birnin-kebbi',name:'Birnin Kebbi',lga:'Birnin Kebbi LGA',state:'Kebbi State',disco:'KAEDCO',feeder:'Birnin Kebbi 33kV',avgH:'5h',status:'unstable',conf:60,info:'Birnin Kebbi, capital of Kebbi State, is served by KAEDCO. Supply averages 4–6 hours. The state capital areas receive slightly better priority than rural communities.'},
-  {key:'argungu-kebbi',name:'Argungu',lga:'Argungu LGA',state:'Kebbi State',disco:'KAEDCO',feeder:'Argungu 33kV',avgH:'3h',status:'off',conf:54,info:'Argungu is famous for its annual international fishing festival. KAEDCO supply is very limited at 2–4 hours. The festival ironically attracts international attention while the town itself has poor electricity.'},
-
-  // ── SOKOTO ────────────────────────────────────────────────────────────────
-  {key:'sokoto-city',name:'Sokoto City',lga:'Sokoto North LGA',state:'Sokoto State',disco:'KAEDCO',feeder:'Sokoto 33kV',avgH:'5h',status:'on',conf:65,info:'Sokoto City, the Seat of the Caliphate, is served by KAEDCO. Supply averages 4–6 hours. Government House and the Central Business District get slightly better supply.'},
-  {key:'wurno-sokoto',name:'Wurno',lga:'Wurno LGA',state:'Sokoto State',disco:'KAEDCO',feeder:'Wurno 33kV',avgH:'3h',status:'off',conf:52,info:'Wurno is an agricultural town near Sokoto. KAEDCO supply is minimal at 2–4 hours. Rural electrification is very poor and most homes rely on solar or generators.'},
-
-  // ── ZAMFARA ───────────────────────────────────────────────────────────────
-  {key:'gusau-zamfara',name:'Gusau',lga:'Gusau LGA',state:'Zamfara State',disco:'KAEDCO',feeder:'Gusau 33kV',avgH:'4h',status:'off',conf:58,info:'Gusau, Zamfara State capital, is one of Nigeria\'s least electrified state capitals. KAEDCO supply averages 3–5 hours. Security challenges in the state have disrupted transmission infrastructure.'},
-  {key:'kaura-namoda',name:'Kaura Namoda',lga:'Kaura Namoda LGA',state:'Zamfara State',disco:'KAEDCO',feeder:'Kaura Namoda 33kV',avgH:'3h',status:'off',conf:50,info:'Kaura Namoda is a border town with Niger Republic. KAEDCO supply is extremely limited at 2–4 hours. Security challenges have made infrastructure maintenance very difficult.'},
-
-  // ── KATSINA ───────────────────────────────────────────────────────────────
-  {key:'katsina-city',name:'Katsina City',lga:'Katsina LGA',state:'Katsina State',disco:'KANO',feeder:'Katsina 33kV',avgH:'6h',status:'on',conf:68,info:'Katsina City is served by KEDCO. Supply averages 5–7 hours. Government quarters and official residences receive priority. Rimi market area experiences supply disruptions frequently.'},
-  {key:'daura-katsina',name:'Daura',lga:'Daura LGA',state:'Katsina State',disco:'KANO',feeder:'Daura 33kV',avgH:'4h',status:'unstable',conf:59,info:'Daura is the ancestral home of former President Buhari. KEDCO supply is limited at 3–5 hours. Despite political connections, the town\'s supply remains below average for a historical reason: infrastructure investment has been slow.'},
-
-  // ── JIGAWA ────────────────────────────────────────────────────────────────
-  {key:'dutse-jigawa',name:'Dutse',lga:'Dutse LGA',state:'Jigawa State',disco:'KANO',feeder:'Dutse 33kV',avgH:'5h',status:'on',conf:63,info:'Dutse, Jigawa State capital, is one of Nigeria\'s smaller state capitals. KEDCO supply averages 4–6 hours. GRA and administrative areas have relatively newer infrastructure than the old settlement.'},
-  {key:'hadejia-jigawa',name:'Hadejia',lga:'Hadejia LGA',state:'Jigawa State',disco:'KANO',feeder:'Hadejia 33kV',avgH:'4h',status:'off',conf:56,info:'Hadejia is a walled city on the Hadejia River. KEDCO supply is limited at 3–5 hours. The floodplain geography creates distribution infrastructure challenges.'},
-
-  // ── PLATEAU ───────────────────────────────────────────────────────────────
-  {key:'jos-plateau',name:'Jos',lga:'Jos North/South LGA',state:'Plateau State',disco:'JED',feeder:'Jos 33kV',avgH:'7h',status:'on',conf:75,info:'Jos, on the Plateau, is served by JED. The cooler climate reduces air-conditioning load, contributing to relatively better supply of 6–8 hours average. Rayfield and GRA areas are more reliable.'},
-  {key:'bukuru-plateau',name:'Bukuru',lga:'Jos South LGA',state:'Plateau State',disco:'JED',feeder:'Bukuru 33kV',avgH:'5h',status:'unstable',conf:65,info:'Bukuru is an industrial suburb of Jos. JED supply is challenged by aging industrial infrastructure. Average supply is 4–6 hours.'},
-  {key:'shendam-plateau',name:'Shendam',lga:'Shendam LGA',state:'Plateau State',disco:'JED',feeder:'Shendam 33kV',avgH:'4h',status:'off',conf:56,info:'Shendam is an agricultural town in southern Plateau. JED supply is limited at 3–5 hours. The town is at the end of a long feeder from Jos, receiving lower voltage and shorter windows.'},
-
-  // ── BAUCHI ────────────────────────────────────────────────────────────────
-  {key:'bauchi-city',name:'Bauchi',lga:'Bauchi LGA',state:'Bauchi State',disco:'JED',feeder:'Bauchi 33kV',avgH:'5h',status:'on',conf:66,info:'Bauchi, gateway to Yankari National Park, is served by JED. Supply averages 4–6 hours. Government Hill and GRA areas receive better supply.'},
-  {key:'azare-bauchi',name:'Azare',lga:'Katagum LGA',state:'Bauchi State',disco:'YEDC',feeder:'Azare 33kV',avgH:'4h',status:'off',conf:55,info:'Azare is a commercial town at the border between Bauchi and Jigawa. Supply from YEDC is very limited at 3–5 hours. The border town status creates feeder maintenance uncertainty.'},
-
-  // ── GOMBE ─────────────────────────────────────────────────────────────────
-  {key:'gombe-city',name:'Gombe',lga:'Gombe LGA',state:'Gombe State',disco:'YEDC',feeder:'Gombe 33kV',avgH:'5h',status:'on',conf:64,info:'Gombe, the "Jewel of the Savannah," is served by YEDC. Supply averages 4–6 hours. Government House corridor gets slightly better supply. The dry season heat drives up cooling demand.'},
-  {key:'kumo-gombe',name:'Kumo',lga:'Akko LGA',state:'Gombe State',disco:'YEDC',feeder:'Kumo 33kV',avgH:'4h',status:'unstable',conf:55,info:'Kumo is the headquarters of Akko LGA, the most populous LGA in Gombe State. YEDC supply is limited at 3–5 hours. Agricultural market activity creates demand spikes.'},
-
-  // ── ADAMAWA ───────────────────────────────────────────────────────────────
-  {key:'yola-adamawa',name:'Yola',lga:'Yola North LGA',state:'Adamawa State',disco:'YEDC',feeder:'Yola 33kV',avgH:'5h',status:'unstable',conf:61,info:'Yola, Adamawa State capital, is headquarters of YEDC. Despite housing the utility\'s HQ, supply averages 4–6 hours.'},
-  {key:'jimeta-adamawa',name:'Jimeta',lga:'Yola South LGA',state:'Adamawa State',disco:'YEDC',feeder:'Jimeta 33kV',avgH:'5h',status:'on',conf:63,info:'Jimeta is the commercial twin of Yola. YEDC supply averages 4–6 hours. Despite being the commercial hub, supply is irregular.'},
-  {key:'mubi-adamawa',name:'Mubi',lga:'Mubi North LGA',state:'Adamawa State',disco:'YEDC',feeder:'Mubi 33kV',avgH:'4h',status:'off',conf:55,info:'Mubi is a commercial border town with Cameroon. YEDC supply is very limited at 3–5 hours. Past insurgency activity disrupted infrastructure significantly and recovery has been slow.'},
-
-  // ── TARABA ────────────────────────────────────────────────────────────────
-  {key:'jalingo-taraba',name:'Jalingo',lga:'Jalingo LGA',state:'Taraba State',disco:'YEDC',feeder:'Jalingo 33kV',avgH:'4h',status:'off',conf:58,info:'Jalingo, Taraba State capital, faces significant power challenges. YEDC supply averages 3–5 hours. As a geographically remote state capital, transmission distances contribute to losses.'},
-  {key:'wukari-taraba',name:'Wukari',lga:'Wukari LGA',state:'Taraba State',disco:'YEDC',feeder:'Wukari 33kV',avgH:'4h',status:'unstable',conf:56,info:'Wukari is a major commercial town in Taraba State. YEDC supply is very limited at 3–5 hours. Generator dependence is extremely high among businesses.'},
-
-  // ── BORNO ─────────────────────────────────────────────────────────────────
-  {key:'maiduguri-borno',name:'Maiduguri',lga:'Maiduguri Metropolitan',state:'Borno State',disco:'YEDC',feeder:'Maiduguri 33kV',avgH:'5h',status:'unstable',conf:61,info:'Maiduguri has been recovering from insurgency damage. YEDC supply has been improving gradually, now averaging 4–6 hours. GRA and Bolori Extension tend to be better served.'},
-  {key:'biu-borno',name:'Biu',lga:'Biu LGA',state:'Borno State',disco:'YEDC',feeder:'Biu 33kV',avgH:'3h',status:'off',conf:50,info:'Biu is a hilly town in southern Borno. YEDC supply is minimal at 2–4 hours. Infrastructure damage from past insurgency has been only partially repaired.'},
-
-  // ── YOBE ──────────────────────────────────────────────────────────────────
-  {key:'damaturu-yobe',name:'Damaturu',lga:'Damaturu LGA',state:'Yobe State',disco:'YEDC',feeder:'Damaturu 33kV',avgH:'4h',status:'off',conf:57,info:'Damaturu, Yobe State capital, is one of the most challenging electricity environments in Nigeria due to past insurgency damage. YEDC supply averages 3–5 hours.'},
-  {key:'potiskum-yobe',name:'Potiskum',lga:'Potiskum LGA',state:'Yobe State',disco:'YEDC',feeder:'Potiskum 33kV',avgH:'4h',status:'unstable',conf:56,info:'Potiskum is the commercial capital of Yobe State and one of the busiest markets in North East Nigeria. YEDC supply is limited at 3–5 hours despite the high commercial activity.'},
-
-  // ── NIGER ─────────────────────────────────────────────────────────────────
-  {key:'minna-niger',name:'Minna',lga:'Chanchaga LGA',state:'Niger State',disco:'AEDC',feeder:'Minna 33kV',avgH:'5h',status:'on',conf:65,info:'Minna, Niger State capital, is served by AEDC. Supply averages 4–6 hours. Bosso and Maitumbi areas receive more consistent supply. Ironically close to Shiroro Dam but supply remains poor.'},
-  {key:'bida-niger',name:'Bida',lga:'Bida LGA',state:'Niger State',disco:'AEDC',feeder:'Bida 33kV',avgH:'4h',status:'off',conf:58,info:'Bida is the headquarters of the Etsu Nupe Emirate and known for glasswork and brass crafts. AEDC supply averages 3–5 hours. The craft industries are heavily affected by frequent power cuts.'},
-  {key:'suleja-niger',name:'Suleja',lga:'Suleja LGA',state:'Niger State',disco:'AEDC',feeder:'Suleja 33kV',avgH:'6h',status:'on',conf:69,info:'Suleja is a border town adjacent to Abuja FCT. AEDC supply averages 5–7 hours, better than inland Niger State towns due to proximity to Abuja transmission infrastructure. Many Abuja workers live here.'},
-
-  // ── KWARA ─────────────────────────────────────────────────────────────────
-  {key:'ilorin-kwara',name:'Ilorin',lga:'Ilorin West LGA',state:'Kwara State',disco:'IBEDC',feeder:'Ilorin 33kV',avgH:'7h',status:'on',conf:73,info:'Ilorin, Kwara State capital, sits at the crossroads of North and South Nigeria. IBEDC supply averages 6–8 hours. GRA and around Kwara Hotel area are better served. Tanke and parts of Fate road experience more instability.'},
-  {key:'offa-kwara',name:'Offa',lga:'Offa LGA',state:'Kwara State',disco:'IBEDC',feeder:'Offa 33kV',avgH:'5h',status:'on',conf:63,info:'Offa is a commercial town in Kwara State known for its entrepreneurial Offa people. IBEDC supply averages 4–6 hours.'},
-
-  // ── KOGI ──────────────────────────────────────────────────────────────────
-  {key:'lokoja-kogi',name:'Lokoja',lga:'Lokoja LGA',state:'Kogi State',disco:'AEDC',feeder:'Lokoja 33kV',avgH:'5h',status:'unstable',conf:64,info:'Lokoja, where Rivers Niger and Benue meet, is served by AEDC. Supply averages 4–6 hours. Annual flooding of low-lying areas regularly damages distribution equipment.'},
-  {key:'okene-kogi',name:'Okene',lga:'Okene LGA',state:'Kogi State',disco:'AEDC',feeder:'Okene 33kV',avgH:'5h',status:'on',conf:64,info:'Okene is the commercial capital of Kogi State and heartland of the Ebira people. AEDC supply averages 4–6 hours. Commercial activity around Okene Market puts heavy feeder demand.'},
-  {key:'idah-kogi',name:'Idah',lga:'Idah LGA',state:'Kogi State',disco:'AEDC',feeder:'Idah 33kV',avgH:'4h',status:'off',conf:57,info:'Idah is the seat of the Attah of Igala Kingdom on the Niger River. AEDC supply is very limited at 3–5 hours. The river crossing location makes infrastructure maintenance challenging.'},
-
-  // ── NASARAWA ──────────────────────────────────────────────────────────────
-  {key:'lafia-nasarawa',name:'Lafia',lga:'Lafia LGA',state:'Nasarawa State',disco:'AEDC',feeder:'Lafia 33kV',avgH:'5h',status:'on',conf:64,info:'Lafia, Nasarawa State capital, is served by AEDC. Supply averages 4–6 hours. The proximity to Abuja means infrastructure quality is somewhat better than more remote North Central towns.'},
-  {key:'keffi-nasarawa',name:'Keffi',lga:'Keffi LGA',state:'Nasarawa State',disco:'AEDC',feeder:'Keffi 33kV',avgH:'6h',status:'on',conf:68,info:'Keffi is a satellite town near Abuja, home to Nasarawa State University. AEDC supply averages 5–7 hours. The Abuja-Keffi corridor receives some of the FCT infrastructure benefits.'},
-
-  // ── BENUE ─────────────────────────────────────────────────────────────────
-  {key:'makurdi-benue',name:'Makurdi',lga:'Makurdi LGA',state:'Benue State',disco:'AEDC',feeder:'Makurdi 33kV',avgH:'5h',status:'unstable',conf:63,info:'Makurdi, Benue State capital on the Benue River, is served by AEDC. Supply averages 4–6 hours. North Bank and Wadata areas get slightly better supply than Wurukum and High Level.'},
-  {key:'gboko-benue',name:'Gboko',lga:'Gboko LGA',state:'Benue State',disco:'AEDC',feeder:'Gboko 33kV',avgH:'4h',status:'off',conf:56,info:'Gboko is the headquarters of the Tiv nation and a major yam producing area. AEDC supply is limited at 3–5 hours. Agricultural town infrastructure receives lower priority than the state capital.'},
-];
-
-
-// Build lookup map
-const areaMap = {};
-AREAS.forEach(a => {
-  areaMap[a.key] = a;
-  // also index by lowercase name
-  areaMap[a.name.toLowerCase()] = a;
-});
 
 // ─── LOCAL STORAGE REPORTS ────────────────────────────────────────────────────
 function getLocalReports(areaKey) {
@@ -1498,13 +1220,6 @@ function quickSearch(key) {
   const area = AREAS.find(a => a.key === key);
   if (area) { document.getElementById('searchInput').value = area.name; showArea(area); }
 }
-
-// populate quick chips
-const QUICK = ['lekki-lagos','wuse-abuja','enugu-gra','bodija-ibadan','benin-city-edo','port-harcourt-gra','kano-gra','jos-plateau'];
-document.getElementById('quickAreas').innerHTML = QUICK.map(k => {
-  const a = AREAS.find(x => x.key === k);
-  return a ? `<button class="quick-chip" onclick="quickSearch('${k}')">${a.name}</button>` : '';
-}).join('');
 
 document.getElementById('searchBtn').addEventListener('click', () => doSearch(document.getElementById('searchInput').value));
 document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(e.target.value); });
@@ -1729,7 +1444,12 @@ function showToast(msg) {
 // pre-fill supabase fields if already saved
 if (SB_URL) document.getElementById('sbUrl').value = SB_URL;
 if (SB_KEY) document.getElementById('sbKey').value = SB_KEY;
-if (SB_URL && SB_KEY) { supabaseReady = true; document.getElementById("setupBanner").classList.remove("show"); }
+if (SB_URL && SB_KEY) {
+  supabaseReady = true;
+  document.getElementById("setupBanner").classList.remove("show");
+}
+// Load areas from Supabase (or cache)
+loadAreas();
 </script>
 </body>
 </html>
