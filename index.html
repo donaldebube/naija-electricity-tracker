@@ -1199,7 +1199,7 @@ async function showArea(area) {
   document.getElementById('resultArea').className = 'result-area visible';
   document.getElementById('resName').textContent = area.name;
   document.getElementById('resLocation').textContent = (area.lga||'') + (area.lga?' · ':'') + area.state;
-  document.getElementById('resBadge').innerHTML = statusBadgeHTML(area.status);
+  document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(area));
   document.getElementById('resChips').innerHTML = `<span class="chip">${area.disco}</span><span class="chip">${area.feeder||''}</span><span class="chip">${area.state}</span>`;
   document.getElementById('sHours').textContent = area.avgH;
   document.getElementById('confFill').style.width = (area.conf||50) + '%';
@@ -1215,30 +1215,37 @@ async function showArea(area) {
   document.getElementById('hoursVal').textContent = '—';
   document.getElementById('hoursHint').textContent = 'Drag to set hours';
 
-  const localReports = getLocalReports(area.key);
-  renderReports(area, localReports);
-  renderHistory(localReports);
   document.getElementById('setupBanner').classList.add('show');
 
   if (SB_URL && SB_KEY) {
     supabaseReady = true;
     document.getElementById('setupBanner').classList.remove('show');
     try {
-      // Fetch fresh area data first — gets latest live_avg_hours, live_status etc from DB trigger
+      // Fetch fresh area data — gets latest live_avg_hours, live_status etc from DB trigger
       const freshArea = await sbFetch(`areas?key=eq.${encodeURIComponent(area.key)}&select=*&limit=1`);
       if (freshArea && freshArea.length > 0) {
         currentArea = normalizeArea(freshArea[0]);
-        // Update chips in case feeder changed
         document.getElementById('resChips').innerHTML = `<span class="chip">${currentArea.disco}</span><span class="chip">${currentArea.feeder||''}</span><span class="chip">${currentArea.state}</span>`;
+        document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(currentArea));
       }
-      // Then fetch reports
+      // Fetch reports — Supabase is the single source of truth
       const remote = await sbFetch(`reports?area_key=eq.${encodeURIComponent(area.key)}&order=created_at.desc&limit=50`);
       const data = remote || [];
-      const localIds = new Set(localReports.map(r=>r.id));
-      const merged = [...localReports, ...data.filter(r=>!localIds.has(r.id))];
-      renderReports(currentArea, merged);
-      renderHistory(merged);
-    } catch(e) { console.warn('Reports/area fetch failed:', e); }
+      // Only use Supabase reports — no local merge for consistency
+      renderReports(currentArea, data);
+      renderHistory(data);
+    } catch(e) {
+      console.warn('Fetch failed, using local fallback:', e);
+      // Offline fallback — use local reports
+      const localReports = getLocalReports(area.key);
+      renderReports(area, localReports);
+      renderHistory(localReports);
+    }
+  } else {
+    // No Supabase — local only mode
+    const localReports = getLocalReports(area.key);
+    renderReports(area, localReports);
+    renderHistory(localReports);
   }
 }
 
@@ -1248,17 +1255,13 @@ async function handleUpvote(id, idx) {
   if (votes[id]) { showToast('Already voted!'); return; }
   saveLocalVote(id);
   allReports[idx].upvotes = (allReports[idx].upvotes||0) + 1;
-  // Update Supabase
-  if (supabaseReady && !id.startsWith('local_')) {
+  // Always try to update Supabase (server IDs won't start with 'local_')
+  if (supabaseReady && !String(id).startsWith('local_')) {
     await sbFetch(`reports?id=eq.${id}`, {
       method:'PATCH',
       body:JSON.stringify({ upvotes: allReports[idx].upvotes })
     });
   }
-  // Update local cache
-  const local = getLocalReports(currentArea.key);
-  const li = local.findIndex(r=>r.id===id);
-  if (li>=0) { local[li].upvotes = allReports[idx].upvotes; try{localStorage.setItem('nl_r_'+currentArea.key,JSON.stringify(local));}catch(e){} }
   renderReports(currentArea, allReports);
   renderHistory(allReports);
   showToast('👍 Marked as helpful!');
@@ -1280,13 +1283,20 @@ function doSearch(q) {
   hideSuggestions();
 }
 
+function getDisplayStatus(area) {
+  // Use live status from DB trigger if available (3+ reports), else static
+  return (area.liveStatus && (area.reportCount || 0) >= 3) ? area.liveStatus : area.status;
+}
+
 function showSuggestions(matches) {
   const el = document.getElementById('suggestions');
-  el.innerHTML = matches.map(a => `
-    <div class="sug-item" onclick="selectArea('${a.key}')">
+  el.innerHTML = matches.map(a => {
+    const s = getDisplayStatus(a);
+    return `<div class="sug-item" onclick="selectArea('${a.key}')">
       <div><span class="sug-name">${a.name}</span><span class="sug-meta" style="margin-left:8px">${a.state}</span></div>
-      <span class="sug-status ${a.status==='on'?'s-on':a.status==='off'?'s-off':'s-unstable'}" style="font-size:11px;padding:2px 8px;border-radius:8px">${statusIcon(a.status)} ${a.status==='on'?'On':a.status==='off'?'Off':'Unstable'}</span>
-    </div>`).join('');
+      <span class="sug-status ${s==='on'?'s-on':s==='off'?'s-off':'s-unstable'}" style="font-size:11px;padding:2px 8px;border-radius:8px">${statusIcon(s)} ${s==='on'?'On':s==='off'?'Off':'Unstable'}</span>
+    </div>`;
+  }).join('');
   el.style.display = 'block';
 }
 function hideSuggestions() { document.getElementById('suggestions').style.display='none'; }
@@ -1367,9 +1377,16 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
     created_at:new Date().toISOString()
   };
 
+  let remoteSaved = false;
   if(supabaseReady){
-    const ok=await sbFetch('reports',{method:'POST',body:JSON.stringify({area_key:report.area_key,status,role,message:msg,nickname:nick||null,upvotes:0,hours_today})});
-    if(!ok)saveLocalReport(currentArea.key,report);
+    const result = await sbFetch('reports',{method:'POST',body:JSON.stringify({area_key:report.area_key,status,role,message:msg,nickname:nick||null,upvotes:0,hours_today})});
+    if(result && result.length > 0) {
+      // Use the server-assigned ID so upvotes work across devices
+      report.id = result[0].id;
+      remoteSaved = true;
+    } else {
+      saveLocalReport(currentArea.key,report);
+    }
   } else {
     saveLocalReport(currentArea.key,report);
   }
