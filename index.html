@@ -1056,19 +1056,21 @@ function avClass(status) {
   return 'av-b';
 }
 
-function renderReports(area) {
+function renderReports(area, reports) {
   const list = document.getElementById('reportsList');
   const countEl = document.getElementById('reportsCount');
   const votes = getLocalVotes();
-  const local = getLocalReports(area.key);
-  // merge: remote on top if available, then local
-  allReports = [...local];
+  // if reports passed in explicitly, use them; otherwise rebuild from local only
+  if (reports !== undefined) {
+    allReports = reports;
+  } else {
+    allReports = getLocalReports(area.key);
+  }
   const total = allReports.length;
   countEl.textContent = total + ' report' + (total !== 1 ? 's' : '');
   document.getElementById('sReports').textContent = total;
-  // vote total
   const totalVotes = allReports.reduce((a,r) => a + (r.upvotes || 0), 0);
-  document.getElementById('sVotes').textContent = totalVotes;
+  document.getElementById('sVotes').textContent = totalVotes || 0;
   if (!allReports.length) {
     list.innerHTML = '<div class="no-reports">No reports yet for this area. Be the first to report!</div>';
     return;
@@ -1105,7 +1107,7 @@ function handleUpvote(id, idx) {
     local[li].upvotes = allReports[idx].upvotes;
     try { localStorage.setItem('nl_r_' + currentArea.key, JSON.stringify(local)); } catch(e){}
   }
-  renderReports(currentArea);
+  renderReports(currentArea, allReports);
 }
 
 function renderHistory(area) {
@@ -1144,22 +1146,28 @@ async function showArea(area) {
   document.getElementById('resInfo').textContent = area.info;
   document.getElementById('formAreaName').textContent = area.name;
   document.getElementById('sVotes').textContent = '—';
-  renderReports(area);
   renderHistory(area);
   renderDiscoInfo(area);
   document.getElementById('setupBanner').classList.add('show');
   generateCaptcha();
   updateRateIndicator(area.key);
+
+  // Always start with local reports immediately so UI isn't blank
+  const localReports = getLocalReports(area.key);
+  renderReports(area, localReports);
+
+  // Then fetch remote and merge
   if (SB_URL && SB_KEY) {
     supabaseReady = true;
     document.getElementById('setupBanner').classList.remove('show');
-    const remote = await loadRemoteReports(area.key);
-    // merge with local, deduplicate by id
-    const local = getLocalReports(area.key);
-    const localIds = new Set(local.map(r => r.id));
-    const newRemote = remote.filter(r => !localIds.has(r.id));
-    allReports = [...local, ...newRemote];
-    renderReports(area);
+    try {
+      const remote = await loadRemoteReports(area.key);
+      const localIds = new Set(localReports.map(r => r.id));
+      const merged = [...localReports, ...remote.filter(r => !localIds.has(r.id))];
+      renderReports(area, merged);
+    } catch(e) {
+      console.warn('Could not fetch remote reports:', e);
+    }
   }
 }
 
@@ -1365,7 +1373,9 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
   this.disabled = false;
   this.textContent = 'Submit report';
   updateRateIndicator(currentArea.key);
-  renderReports(currentArea);
+  // add newly submitted report to allReports and re-render
+  allReports = [report, ...allReports];
+  renderReports(currentArea, allReports);
   showToast('Report submitted. Thank you!');
 });
 
