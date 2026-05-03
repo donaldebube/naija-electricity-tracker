@@ -74,7 +74,9 @@ nav {
   font-weight: 500;
   padding: 4px 10px;
   border-radius: 20px;
+  white-space: nowrap;
 }
+.nav-pill-db { background: var(--green-light); color: var(--green-dark); }
 .pulse-dot {
   width: 6px; height: 6px;
   background: var(--green);
@@ -218,6 +220,81 @@ nav {
 
 .result-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
 @media (max-width: 720px) { .result-grid { grid-template-columns: 1fr; } }
+
+/* ── MOBILE RESPONSIVE ───────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  nav { padding: 0 14px; height: 54px; gap: 8px; }
+  .nav-title { font-size: 15px; }
+  .nav-logo { width: 28px; height: 28px; border-radius: 7px; }
+  .nav-logo svg { width: 15px; height: 15px; }
+  .nav-pill { font-size: 11px; padding: 4px 8px; gap: 4px; }
+  .nav-pill-text { display: none; }
+  .nav-right { gap: 6px; }
+
+  .hero { padding: 24px 16px 20px; }
+  .hero h1 { font-size: 22px; }
+  .hero p { font-size: 13px; margin-bottom: 16px; }
+
+  .search-inner input { font-size: 14px; padding: 11px 0; }
+  .btn-search { padding: 0 14px; font-size: 13px; }
+  .search-icon-wrap { padding: 0 10px; }
+  .quick-chip { font-size: 11px; padding: 4px 10px; }
+
+  .main { padding: 16px 12px 48px; }
+
+  .status-head { padding: 14px 14px 12px; }
+  .area-name { font-size: 18px; }
+  .area-location { font-size: 11px; }
+  .status-badge { font-size: 12px; padding: 5px 10px; }
+  .sdot { width: 7px; height: 7px; }
+  .chip { font-size: 10px; padding: 2px 8px; }
+
+  .stats-grid { grid-template-columns: repeat(3,1fr); }
+  .stat-cell { padding: 12px 8px; }
+  .stat-n { font-size: 18px; }
+  .stat-l { font-size: 10px; }
+
+  .conf-bar-wrap { padding: 10px 14px; gap: 8px; }
+  .conf-label { font-size: 11px; }
+
+  .card { padding: 14px 14px; }
+  .card-body { font-size: 13px; }
+
+  .reports-head { padding: 12px 14px; }
+  .report-item { padding: 12px 14px; gap: 10px; }
+  .av { width: 30px; height: 30px; font-size: 11px; }
+  .report-text { font-size: 13px; }
+
+  .form-card { padding: 14px 14px; }
+  .form-row { grid-template-columns: 1fr; gap: 7px; }
+  .captcha-row { flex-wrap: wrap; gap: 8px; }
+  .captcha-hint { width: 100%; }
+  .form-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .btn-submit { width: 100%; padding: 12px; font-size: 14px; }
+  .form-note { text-align: center; }
+
+  .sidebar-card { padding: 14px; }
+
+  .suggest-card { padding: 16px; }
+  .sug-form-grid { grid-template-columns: 1fr; }
+  .sug-actions { flex-direction: column; align-items: stretch; }
+  .sug-actions .btn-submit { width: 100%; }
+
+  .modal { padding: 20px 16px; }
+  .modal-actions { flex-direction: column; }
+  .modal-actions button { width: 100%; }
+
+  footer { font-size: 11px; padding: 16px; }
+  .toast { font-size: 12px; padding: 9px 16px; width: calc(100% - 32px); white-space: normal; text-align: center; }
+}
+
+@media (max-width: 380px) {
+  .hero h1 { font-size: 19px; }
+  .stat-n { font-size: 16px; }
+  .area-name { font-size: 16px; }
+  .area-row { flex-direction: column; gap: 8px; }
+  .status-badge { align-self: flex-start; }
+}
 
 /* STATUS CARD */
 .status-card {
@@ -655,8 +732,8 @@ footer {
     <span class="nav-title">NaijaLight</span>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <div class="nav-pill"><div class="pulse-dot"></div>Live reports</div>
-    <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--green-dark);background:var(--green-light);padding:4px 10px;border-radius:20px;font-weight:500"><div class="pulse-dot"></div>Database connected</div>
+    <div class="nav-pill"><div class="pulse-dot"></div><span class="nav-pill-text">Live reports</span></div>
+    <div class="nav-pill nav-pill-db"><div class="pulse-dot"></div><span class="nav-pill-text">DB connected</span></div>
   </div>
 </nav>
 
@@ -730,7 +807,7 @@ footer {
             <div class="stat-cell"><div class="stat-n" id="sVotes"></div><div class="stat-l">Helpful<br>votes</div></div>
           </div>
           <div class="conf-bar-wrap">
-            <div class="conf-label">Report agreement</div>
+            <div class="conf-label" id="confLabel">Report agreement</div>
             <div class="conf-track"><div class="conf-fill" id="confFill" style="width:0%"></div></div>
             <div class="conf-pct" id="confPct"></div>
           </div>
@@ -1056,6 +1133,51 @@ function avClass(status) {
   return 'av-b';
 }
 
+// ─── LIVE CONFIDENCE CALCULATION ─────────────────────────────────────────────
+function calculateConfidence(reports, fallbackConf, fallbackStatus) {
+  const MIN_REPORTS = 3;
+  if (!reports || reports.length < MIN_REPORTS) {
+    return { pct: fallbackConf, status: fallbackStatus, source: 'static', count: reports ? reports.length : 0 };
+  }
+  const counts = { on: 0, off: 0, unstable: 0 };
+  reports.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  const total = counts.on + counts.off + counts.unstable;
+  if (total === 0) return { pct: fallbackConf, status: fallbackStatus, source: 'static', count: 0 };
+  // majority status
+  const dominant = Object.keys(counts).reduce((a, b) => counts[a] >= counts[b] ? a : b);
+  const pct = Math.round((counts[dominant] / total) * 100);
+  return { pct, status: dominant, source: 'live', count: total };
+}
+
+function updateConfidenceBar(reports, area) {
+  const fallbackConf = area.conf || area.confidence || 50;
+  const fallbackStatus = area.status || 'unknown';
+  const result = calculateConfidence(reports, fallbackConf, fallbackStatus);
+
+  // Update bar
+  document.getElementById('confFill').style.width = result.pct + '%';
+  document.getElementById('confPct').textContent = result.pct + '%';
+
+  // Update bar colour based on dominant status
+  const fill = document.getElementById('confFill');
+  fill.style.background = result.status === 'on' ? 'var(--green)' : result.status === 'off' ? 'var(--red)' : 'var(--amber)';
+
+  // Update label to clarify source
+  const label = document.getElementById('confLabel');
+  if (label) {
+    if (result.source === 'live') {
+      label.textContent = result.count + ' report' + (result.count !== 1 ? 's' : '') + ' agree';
+    } else {
+      label.textContent = 'Based on historical data' + (result.count > 0 ? ' (' + result.count + ' report' + (result.count !== 1 ? 's' : '') + ')' : '');
+    }
+  }
+
+  // Update status badge to reflect live majority if enough reports
+  if (result.source === 'live') {
+    document.getElementById('resBadge').innerHTML = statusBadgeHTML(result.status);
+  }
+}
+
 function renderReports(area, reports) {
   const list = document.getElementById('reportsList');
   const countEl = document.getElementById('reportsCount');
@@ -1155,6 +1277,7 @@ async function showArea(area) {
   // Always start with local reports immediately so UI isn't blank
   const localReports = getLocalReports(area.key);
   renderReports(area, localReports);
+  updateConfidenceBar(localReports, area);
 
   // Then fetch remote and merge
   if (SB_URL && SB_KEY) {
@@ -1165,6 +1288,7 @@ async function showArea(area) {
       const localIds = new Set(localReports.map(r => r.id));
       const merged = [...localReports, ...remote.filter(r => !localIds.has(r.id))];
       renderReports(area, merged);
+      updateConfidenceBar(merged, area);
     } catch(e) {
       console.warn('Could not fetch remote reports:', e);
     }
@@ -1376,6 +1500,7 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
   // add newly submitted report to allReports and re-render
   allReports = [report, ...allReports];
   renderReports(currentArea, allReports);
+  updateConfidenceBar(allReports, currentArea);
   showToast('Report submitted. Thank you!');
 });
 
