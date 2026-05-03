@@ -1099,12 +1099,13 @@ function updateStats(reports, area) {
   pctEl.textContent     = confPct + '%';
   fill.style.background = confStatus === 'on' ? 'var(--green)' : confStatus === 'off' ? 'var(--red)' : 'var(--amber)';
 
+  // Always update the status badge — never leave on "Loading..."
+  document.getElementById('resBadge').innerHTML = statusBadgeHTML(confStatus);
+
   if (confSource === 'db') {
     label.textContent = confCount + ' report' + (confCount !== 1 ? 's' : '') + ' agree · all devices';
-    document.getElementById('resBadge').innerHTML = statusBadgeHTML(confStatus);
   } else if (confSource === 'live') {
     label.textContent = confCount + ' report' + (confCount !== 1 ? 's' : '') + ' agree';
-    document.getElementById('resBadge').innerHTML = statusBadgeHTML(confStatus);
   } else {
     label.textContent = 'Based on historical data' + (confCount > 0 ? ' (' + confCount + ' report' + (confCount !== 1 ? 's' : '') + ')' : '');
   }
@@ -1232,6 +1233,19 @@ async function showArea(area) {
         currentArea = normalizeArea(freshAreaRes[0]);
         document.getElementById('resChips').innerHTML = `<span class="chip">${currentArea.disco}</span><span class="chip">${currentArea.feeder||''}</span><span class="chip">${currentArea.state}</span>`;
       }
+
+      // Immediately set status badge + hours from the fresh area data
+      // so they never get stuck on "Loading..." if reports are empty
+      document.getElementById('resBadge').innerHTML = statusBadgeHTML(getDisplayStatus(currentArea));
+      const preHours = currentArea.liveAvgH != null ? currentArea.liveAvgH + 'h' : currentArea.avgH || '?h';
+      document.getElementById('sHours').textContent = preHours;
+      if (currentArea.liveAvgH != null) document.getElementById('sHours').classList.add('live');
+      const preConf = currentArea.liveConf != null ? currentArea.liveConf : (currentArea.conf || 50);
+      const preStatus = getDisplayStatus(currentArea);
+      document.getElementById('confFill').style.width = preConf + '%';
+      document.getElementById('confFill').style.background = preStatus === 'on' ? 'var(--green)' : preStatus === 'off' ? 'var(--red)' : 'var(--amber)';
+      document.getElementById('confPct').textContent = preConf + '%';
+      document.getElementById('confLabel').textContent = currentArea.reportCount >= 3 ? currentArea.reportCount + ' reports agree · all devices' : 'Based on historical data';
 
       // Render reports — Supabase only, no local mixing
       const data = reportsRes || [];
