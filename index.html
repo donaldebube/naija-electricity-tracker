@@ -823,6 +823,25 @@ footer{
 
 
 .select-hint{font-size:11px;color:var(--text3);margin-top:4px;line-height:1.35}
+
+.geo-match-panel{
+  grid-column:1 / -1;
+  display:none;
+  border:1px solid rgba(34,197,94,.30);
+  background:linear-gradient(135deg, rgba(34,197,94,.10), rgba(20,184,166,.06)), rgba(15,23,42,.42);
+  border-radius:16px;
+  padding:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.geo-match-panel.show{display:block;animation:matchPanelIn .32s ease both}
+.geo-match-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.geo-match-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:.01em}
+.geo-match-sub{font-size:12px;color:var(--text3);line-height:1.45;margin-top:3px}
+.geo-match-pill{font-size:11px;font-weight:800;color:#86efac;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);border-radius:999px;padding:5px 9px;white-space:nowrap}
+.geo-match-hint{font-size:12px;color:var(--text3);line-height:1.45;margin-top:8px}
+.geo-match-hint strong{color:#86efac}
+@keyframes matchPanelIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
 .optional-note{height:64px!important}
 .admin-panel{display:none;max-width:1120px;margin:0 auto;padding:32px 20px 80px;position:relative;z-index:1}
 .admin-panel.show{display:block;animation:fadeUp .25s ease}
@@ -1250,6 +1269,19 @@ nav{box-shadow:0 1px 0 rgba(255,255,255,.03),0 18px 55px rgba(0,0,0,.22)}
       <div class="suggest-heading">Don't see your area? Suggest it.</div>
       <p class="suggest-intro">Help grow NaijaLight — submit basic info and it'll be reviewed and added.</p>
       <div class="sug-form-grid">
+        <div class="geo-match-panel" id="geoMatchPanel" aria-live="polite">
+          <div class="geo-match-head">
+            <div>
+              <div class="geo-match-title">Confirm the correct location</div>
+              <div class="geo-match-sub">We found more than one possible match. Choose the State/LGA that matches the area you meant.</div>
+            </div>
+            <div class="geo-match-pill" id="geoMatchCount">0 matches</div>
+          </div>
+          <select id="geoMatchSelect">
+            <option value="">Select the correct State / LGA...</option>
+          </select>
+          <div class="geo-match-hint" id="geoMatchHint">Selecting one will automatically fill the State, LGA, Area name and location metadata below.</div>
+        </div>
         <div class="sug-field">
           <label class="sug-label">State <span class="sug-req">*</span></label>
           <select id="sugState"><option value="">Loading states...</option></select>
@@ -2094,6 +2126,8 @@ async function handleUpvote(id, idx) {
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
 let searchRequestId = 0;
 let pendingExternalLocation = null;
+let pendingExternalLocationMatches = [];
+let lastExternalLocationQuery = '';
 
 function scrollSuggestionFormIntoView() {
   const card = document.querySelector('#emptyState .suggest-card');
@@ -2116,10 +2150,64 @@ function setSuggestionStatus(type, text) {
   el.textContent = text || '';
 }
 
+function getGeoJsonMatches(payload) {
+  return payload && Array.isArray(payload.matches) ? payload.matches.filter(m => m && m.name) : [];
+}
+
 function getBestNgDataMatch(payload) {
   // Backward-compatible name. The matches now come from the Nigeria GeoJSON dataset.
-  const matches = payload && Array.isArray(payload.matches) ? payload.matches : [];
+  const matches = getGeoJsonMatches(payload);
   return matches.find(m => m && m.name) || null;
+}
+
+function formatGeoJsonMatchLabel(match) {
+  const name = match?.name || 'Unknown area';
+  const state = match?.state || match?.state_name || 'Unknown state';
+  const lga = match?.lga || match?.local_government || 'LGA not specified';
+  const type = match?.source_type ? String(match.source_type).toUpperCase() : 'MATCH';
+  return `${name} — ${state} / ${lga} (${type})`;
+}
+
+function hideGeoJsonMatchChooser(clear=true) {
+  const panel = document.getElementById('geoMatchPanel');
+  const select = document.getElementById('geoMatchSelect');
+  const count = document.getElementById('geoMatchCount');
+  const hint = document.getElementById('geoMatchHint');
+  if (panel) panel.classList.remove('show');
+  if (select) select.innerHTML = '<option value="">Select the correct State / LGA...</option>';
+  if (count) count.textContent = '0 matches';
+  if (hint) hint.textContent = 'Selecting one will automatically fill the State, LGA, Area name and location metadata below.';
+  if (clear) {
+    pendingExternalLocationMatches = [];
+    lastExternalLocationQuery = '';
+  }
+}
+
+function showGeoJsonMatchChooser(matches, rawQuery) {
+  const panel = document.getElementById('geoMatchPanel');
+  const select = document.getElementById('geoMatchSelect');
+  const count = document.getElementById('geoMatchCount');
+  const hint = document.getElementById('geoMatchHint');
+  if (!panel || !select) return;
+
+  pendingExternalLocationMatches = matches || [];
+  lastExternalLocationQuery = rawQuery || '';
+
+  if (!pendingExternalLocationMatches.length) {
+    hideGeoJsonMatchChooser(false);
+    return;
+  }
+
+  const label = pendingExternalLocationMatches.length === 1 ? '1 match' : `${pendingExternalLocationMatches.length} matches`;
+  if (count) count.textContent = label;
+  select.innerHTML = '<option value="">Select the correct State / LGA...</option>' + pendingExternalLocationMatches.map((match, idx) => {
+    return `<option value="${idx}">${escapeHTML(formatGeoJsonMatchLabel(match))}</option>`;
+  }).join('');
+
+  if (hint) {
+    hint.innerHTML = `We found <strong>${label}</strong> for “${escapeHTML(rawQuery || 'this area')}”. Please pick the correct State/LGA before submitting.`;
+  }
+  panel.classList.add('show');
 }
 
 async function setSelectOption(selectId, value, loadOptionsFn=null) {
@@ -2153,10 +2241,20 @@ async function applyExternalLocationToSuggestionForm(match, rawQuery) {
   }
 
   if (match) {
-    setSuggestionStatus('info', `We found “${name}” in the Nigeria GeoJSON location dataset. Please complete the remaining fields and submit it for admin review. If the LGA list does not load, you can still continue with the area name.`);
+    const locationText = [state, lga].filter(Boolean).join(' / ');
+    setSuggestionStatus('info', `Selected “${name}”${locationText ? ` in ${locationText}` : ''}. Please complete the remaining fields and submit it for admin review.`);
   } else {
     setSuggestionStatus('', '');
   }
+}
+
+async function applySelectedGeoJsonMatch() {
+  const select = document.getElementById('geoMatchSelect');
+  if (!select || select.value === '') return;
+  const idx = Number(select.value);
+  const match = pendingExternalLocationMatches[idx];
+  if (!match) return;
+  await applyExternalLocationToSuggestionForm(match, lastExternalLocationQuery);
 }
 
 function showAreaNotFound() {
@@ -2171,6 +2269,7 @@ async function doSearch(q) {
 
   const thisSearch = ++searchRequestId;
   pendingExternalLocation = null;
+  hideGeoJsonMatchChooser();
 
   const exact = AREAS.find(a =>
     a.name.toLowerCase() === q ||
@@ -2195,11 +2294,23 @@ async function doSearch(q) {
   const externalPayload = await callNgDataLocation('search', { query: rawQuery });
   if (thisSearch !== searchRequestId) return;
 
-  const externalMatch = getBestNgDataMatch(externalPayload);
+  const externalMatches = getGeoJsonMatches(externalPayload);
   showAreaNotFound();
-  await applyExternalLocationToSuggestionForm(externalMatch, rawQuery);
 
-  if (!externalMatch) {
+  if (externalMatches.length > 1) {
+    pendingExternalLocation = null;
+    const nf = document.getElementById('sugName');
+    if (nf && q) nf.value = titleCase(rawQuery).split(',')[0].trim();
+    const stateEl = document.getElementById('sugState');
+    if (stateEl) stateEl.value = '';
+    renderLgaOptions([]);
+    showGeoJsonMatchChooser(externalMatches, rawQuery);
+    setSuggestionStatus('info', `We found multiple possible matches for “${rawQuery}”. Please select the correct State/LGA from the list above.`);
+  } else if (externalMatches.length === 1) {
+    hideGeoJsonMatchChooser();
+    await applyExternalLocationToSuggestionForm(externalMatches[0], rawQuery);
+  } else {
+    hideGeoJsonMatchChooser();
     const nf = document.getElementById('sugName');
     if (nf && q) nf.value = titleCase(rawQuery).split(',')[0].trim();
     setSuggestionStatus('', '');
@@ -2554,6 +2665,11 @@ async function loadLgasForState(state){
     el.value='Not specified';
   }
 }
+const geoMatchSelectEl = document.getElementById('geoMatchSelect');
+if (geoMatchSelectEl) {
+  geoMatchSelectEl.addEventListener('change', applySelectedGeoJsonMatch);
+}
+
 document.getElementById('sugState').addEventListener('change', e=>{
   pendingExternalLocation = null;
   loadLgasForState(e.target.value);
@@ -2607,6 +2723,7 @@ document.getElementById('sugSubmitBtn').addEventListener('click', async function
   ['sugName','sugNote'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   ['sugState','sugLga','sugPowerSituation','sugDisco'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   pendingExternalLocation = null;
+  hideGeoJsonMatchChooser();
   sEl.className='sug-status ok';
   sEl.textContent=saved?'✅ Suggestion received! Admin will review it soon.':'Saved locally. Thank you!';
   refreshPublicCounters();hideLoader();
