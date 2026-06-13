@@ -2144,7 +2144,7 @@ async function applyExternalLocationToSuggestionForm(match, rawQuery) {
   }
 
   if (match) {
-    setSuggestionStatus('info', `We found “${name}” in the Nigeria location database. Please complete the remaining fields and submit it for admin review.`);
+    setSuggestionStatus('info', `We found “${name}” in the Nigeria location database. Please complete the remaining fields and submit it for admin review. If the LGA list does not load, you can still continue with the area name.`);
   } else {
     setSuggestionStatus('', '');
   }
@@ -2539,7 +2539,10 @@ async function loadLgasForState(state){
   if(payload && Array.isArray(payload.lgas) && payload.lgas.length){
     renderLgaOptions(payload.lgas);
   } else if(el) {
-    el.innerHTML='<option value="">Could not load LGAs — continue with area name</option>';
+    // Fallback: do not block the user when the LGA lookup is temporarily unavailable.
+    // The admin can still approve the area later, and NG Data metadata is saved with the suggestion.
+    el.innerHTML='<option value="Not specified">LGA not available — continue with area name</option>';
+    el.value='Not specified';
   }
 }
 document.getElementById('sugState').addEventListener('change', e=>{
@@ -2549,7 +2552,7 @@ document.getElementById('sugState').addEventListener('change', e=>{
 
 document.getElementById('sugSubmitBtn').addEventListener('click', async function(){
   const state=document.getElementById('sugState').value;
-  const lga=document.getElementById('sugLga').value;
+  let lga=document.getElementById('sugLga').value;
   const name=document.getElementById('sugName').value.trim();
   const areaType=document.getElementById('sugAreaType').value;
   const powerSituation=document.getElementById('sugPowerSituation').value;
@@ -2558,7 +2561,10 @@ document.getElementById('sugSubmitBtn').addEventListener('click', async function
   const note=document.getElementById('sugNote').value.trim();
   const sEl=document.getElementById('sugStatus');
   if(!state){sEl.className='sug-status err';sEl.textContent='Please select a state.';return;}
-  if(!lga){sEl.className='sug-status err';sEl.textContent='Please select an LGA.';return;}
+  if(!lga){
+    // If the LGA dropdown could not load, still allow the suggestion to continue.
+    lga = 'Not specified';
+  }
   if(!name){sEl.className='sug-status err';sEl.textContent='Please enter the area name.';return;}
   if(!powerSituation){sEl.className='sug-status err';sEl.textContent='Please select the power situation.';return;}
   this.disabled=true;this.textContent='Submitting...';showLoader('Submitting location suggestion for review...');
