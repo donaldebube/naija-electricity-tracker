@@ -448,6 +448,56 @@ input[type=range]:focus{box-shadow:none}
   content:'';position:absolute;inset:-1px;transform:translateX(-110%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);transition:transform .65s ease;pointer-events:none;
 }
 .human-check-card.checking::before{transform:translateX(110%)}
+.verify-modal{
+  max-width:430px;overflow:hidden;padding:0;border-color:rgba(134,239,172,.22);
+  background:linear-gradient(180deg,rgba(31,41,55,.98),rgba(17,24,39,.98));
+}
+.verify-modal-top{
+  padding:22px 24px 16px;border-bottom:1px solid rgba(148,163,184,.14);
+  background:
+    radial-gradient(circle at 18% 0%,rgba(22,163,74,.18),transparent 36%),
+    radial-gradient(circle at 90% 12%,rgba(45,212,191,.12),transparent 30%);
+}
+.verify-modal-badge{
+  display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:999px;
+  background:rgba(22,163,74,.12);border:1px solid rgba(22,163,74,.26);
+  color:#86efac;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;
+}
+.verify-modal h2{margin:0 0 6px;font-size:19px}
+.verify-modal p{margin:0;color:var(--text2);font-size:13px;line-height:1.55}
+.verify-modal-body{padding:18px 24px 22px}
+.verify-check-row{
+  display:flex;align-items:center;gap:11px;padding:12px 13px;border-radius:14px;
+  background:rgba(255,255,255,.035);border:1px solid rgba(148,163,184,.13);margin-bottom:14px;
+}
+.verify-spinner{
+  width:20px;height:20px;border-radius:50%;border:2px solid rgba(96,165,250,.25);border-top-color:#93c5fd;animation:spin .7s linear infinite;flex-shrink:0;
+}
+.verify-check-row.ready .verify-spinner{border:none;background:linear-gradient(135deg,#16a34a,#0d9488);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;animation:none}
+.verify-check-row.ready .verify-spinner::after{content:'✓';font-size:13px;line-height:1}
+.verify-check-title{font-size:13px;font-weight:800;color:var(--text)}
+.verify-check-sub{font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4}
+.verify-progress-track{height:6px;border-radius:999px;background:rgba(148,163,184,.18);overflow:hidden;margin:2px 0 16px}
+.verify-progress-fill{height:100%;width:26%;border-radius:inherit;background:linear-gradient(90deg,#16a34a,#2dd4bf);box-shadow:0 0 18px rgba(45,212,191,.34);transition:width .45s ease}
+.verify-challenge-box{
+  display:none;padding:14px;border-radius:15px;background:rgba(15,23,42,.45);
+  border:1px solid rgba(134,239,172,.18);margin-bottom:12px;
+}
+.verify-challenge-box.show{display:block;animation:verifyPop .28s ease both}
+.verify-question{
+  font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:22px;color:#fff;margin:4px 0 10px;
+  display:flex;align-items:center;gap:8px;
+}
+.verify-question span{color:#86efac}
+.verify-answer-row{display:flex;gap:9px;align-items:center}
+.verify-answer-row input{margin:0;min-width:0}
+.verify-error{min-height:17px;color:#f87171;font-size:12px;margin-top:8px;font-weight:600}
+.verify-mini-note{font-size:11px;color:var(--text3);line-height:1.5;margin-top:10px}
+.verify-modal .modal-actions{padding:0;margin-top:14px}
+.verify-modal.verifying .verify-progress-fill{width:100%}
+@keyframes verifyPop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes verifyShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
+.verify-shake{animation:verifyShake .42s ease}
 .rate-indicator{font-size:12px;margin-bottom:8px;min-height:18px}
 .rate-ok{color:#4ade80}
 .rate-warn{color:#fbbf24}
@@ -985,6 +1035,39 @@ nav{box-shadow:0 1px 0 rgba(255,255,255,.03),0 18px 55px rgba(0,0,0,.22)}
     <div class="modal-actions">
       <button class="btn-secondary" id="cancelAdminLoginBtn" type="button">Cancel</button>
       <button class="btn-submit" id="adminLoginBtn" type="button">Log in securely</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="humanVerifyModal" role="dialog" aria-modal="true" aria-labelledby="humanVerifyModalTitle">
+  <div class="modal verify-modal" id="humanVerifyPanel">
+    <div class="verify-modal-top">
+      <div class="verify-modal-badge">⚡ NaijaLight Check</div>
+      <h2 id="humanVerifyModalTitle">Human verification</h2>
+      <p>We are running a quick request check. Complete the number step to continue submitting your electricity report.</p>
+    </div>
+    <div class="verify-modal-body">
+      <div class="verify-check-row" id="humanVerifyCheckRow">
+        <div class="verify-spinner" aria-hidden="true"></div>
+        <div>
+          <div class="verify-check-title" id="humanVerifyStatusTitle">Checking browser request...</div>
+          <div class="verify-check-sub" id="humanVerifyStatusSub">Please wait while we prepare the verification step.</div>
+        </div>
+      </div>
+      <div class="verify-progress-track" aria-hidden="true"><div class="verify-progress-fill" id="humanVerifyProgress"></div></div>
+      <div class="verify-challenge-box" id="humanVerifyChallengeBox">
+        <label for="humanVerifyAnswer">Number verification</label>
+        <div class="verify-question" id="humanVerifyQuestion">—</div>
+        <div class="verify-answer-row">
+          <input type="number" id="humanVerifyAnswer" inputmode="numeric" placeholder="Enter answer" autocomplete="off"/>
+          <button class="btn-submit" id="submitHumanVerifyBtn" type="button">Verify</button>
+        </div>
+        <div class="verify-error" id="humanVerifyError"></div>
+        <div class="verify-mini-note">This helps reduce spam reports while keeping the form quick for real residents.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="cancelHumanVerifyBtn" type="button">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2157,27 +2240,77 @@ document.getElementById('hoursSlider').addEventListener('input', function() {
 // ─── HUMAN VERIFICATION ───────────────────────────────────────────────────────
 let humanVerified = false;
 let humanVerifyTimer = null;
+let humanChallenge = null;
 
 function generateCaptcha() {
-  // Kept the old function name so existing calls now reset the new Cloudflare-style check.
+  // Kept the old function name so existing calls reset the new two-step verification flow.
   resetHumanVerification();
+}
+
+function makeHumanChallenge() {
+  const ops = ['+', '×'];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a = Math.floor(Math.random() * 8) + 2;
+  let b = Math.floor(Math.random() * 8) + 2;
+  if (op === '×') {
+    a = Math.floor(Math.random() * 7) + 2;
+    b = Math.floor(Math.random() * 7) + 2;
+  }
+  const answer = op === '+' ? a + b : a * b;
+  humanChallenge = { a, b, op, answer };
+  const q = document.getElementById('humanVerifyQuestion');
+  if (q) q.innerHTML = `<span>${a}</span> ${op} <span>${b}</span> = ?`;
+  return humanChallenge;
+}
+
+function closeHumanVerificationModal() {
+  const modal = document.getElementById('humanVerifyModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function scrollBackToReportForm() {
+  const target = document.getElementById('humanCheck')?.closest('.form-card') || document.getElementById('humanCheck');
+  if (!target) return;
+  setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 180);
 }
 
 function resetHumanVerification() {
   humanVerified = false;
+  humanChallenge = null;
   if (humanVerifyTimer) clearTimeout(humanVerifyTimer);
   const btn = document.getElementById('humanCheckBtn');
   const title = document.getElementById('humanCheckTitle');
   const sub = document.getElementById('humanCheckSub');
-  if (!btn || !title || !sub) return;
-  btn.classList.remove('checking','verified');
-  btn.setAttribute('aria-pressed','false');
-  title.textContent = 'Verify you are human';
-  sub.textContent = 'Click to complete a quick browser check before submitting.';
+  const modalPanel = document.getElementById('humanVerifyPanel');
+  const challengeBox = document.getElementById('humanVerifyChallengeBox');
+  const answer = document.getElementById('humanVerifyAnswer');
+  const error = document.getElementById('humanVerifyError');
+  const checkRow = document.getElementById('humanVerifyCheckRow');
+  const progress = document.getElementById('humanVerifyProgress');
+  const statusTitle = document.getElementById('humanVerifyStatusTitle');
+  const statusSub = document.getElementById('humanVerifyStatusSub');
+  const verifyBtn = document.getElementById('submitHumanVerifyBtn');
+  if (btn && title && sub) {
+    btn.classList.remove('checking','verified');
+    btn.setAttribute('aria-pressed','false');
+    title.textContent = 'Verify you are human';
+    sub.textContent = 'Click to complete a quick browser check before submitting.';
+  }
+  if (modalPanel) modalPanel.classList.remove('verifying');
+  if (challengeBox) challengeBox.classList.remove('show','verify-shake');
+  if (answer) answer.value = '';
+  if (error) error.textContent = '';
+  if (checkRow) checkRow.classList.remove('ready');
+  if (progress) progress.style.width = '26%';
+  if (statusTitle) statusTitle.textContent = 'Checking browser request...';
+  if (statusSub) statusSub.textContent = 'Please wait while we prepare the verification step.';
+  if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify'; }
+  closeHumanVerificationModal();
 }
 
 function completeHumanVerification() {
   humanVerified = true;
+  if (humanVerifyTimer) clearTimeout(humanVerifyTimer);
   const btn = document.getElementById('humanCheckBtn');
   const title = document.getElementById('humanCheckTitle');
   const sub = document.getElementById('humanCheckSub');
@@ -2189,17 +2322,107 @@ function completeHumanVerification() {
   sub.textContent = 'You can now submit your community report.';
 }
 
-function setupHumanVerification() {
+function openHumanVerificationModal() {
+  const modal = document.getElementById('humanVerifyModal');
+  const challengeBox = document.getElementById('humanVerifyChallengeBox');
+  const answer = document.getElementById('humanVerifyAnswer');
+  const error = document.getElementById('humanVerifyError');
+  const checkRow = document.getElementById('humanVerifyCheckRow');
+  const progress = document.getElementById('humanVerifyProgress');
+  const statusTitle = document.getElementById('humanVerifyStatusTitle');
+  const statusSub = document.getElementById('humanVerifyStatusSub');
+  const modalPanel = document.getElementById('humanVerifyPanel');
+  const verifyBtn = document.getElementById('submitHumanVerifyBtn');
+  if (!modal) return;
+
+  makeHumanChallenge();
+  modal.classList.add('open');
+  if (modalPanel) modalPanel.classList.remove('verifying');
+  if (challengeBox) challengeBox.classList.remove('show','verify-shake');
+  if (answer) answer.value = '';
+  if (error) error.textContent = '';
+  if (checkRow) checkRow.classList.remove('ready');
+  if (progress) progress.style.width = '38%';
+  if (statusTitle) statusTitle.textContent = 'Checking browser request...';
+  if (statusSub) statusSub.textContent = 'Confirming this is a real interaction.';
+  if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify'; }
+
+  if (humanVerifyTimer) clearTimeout(humanVerifyTimer);
+  humanVerifyTimer = setTimeout(() => {
+    if (checkRow) checkRow.classList.add('ready');
+    if (progress) progress.style.width = '72%';
+    if (statusTitle) statusTitle.textContent = 'One more quick step';
+    if (statusSub) statusSub.textContent = 'Solve the number check below to return to the report form.';
+    if (challengeBox) challengeBox.classList.add('show');
+    setTimeout(() => answer?.focus(), 80);
+  }, 750);
+}
+
+function startHumanVerificationFlow() {
   const btn = document.getElementById('humanCheckBtn');
   const title = document.getElementById('humanCheckTitle');
   const sub = document.getElementById('humanCheckSub');
-  if (!btn || !title || !sub) return;
-  btn.addEventListener('click', () => {
-    if (humanVerified || btn.classList.contains('checking')) return;
-    btn.classList.add('checking');
-    title.textContent = 'Checking your browser...';
-    sub.textContent = 'Please wait a moment while we confirm this request.';
-    humanVerifyTimer = setTimeout(completeHumanVerification, 900 + Math.floor(Math.random() * 450));
+  if (humanVerified) return;
+  if (btn) btn.classList.add('checking');
+  if (title) title.textContent = 'Checking your browser...';
+  if (sub) sub.textContent = 'A short number verification will appear now.';
+  openHumanVerificationModal();
+}
+
+function submitHumanVerificationAnswer() {
+  const answerEl = document.getElementById('humanVerifyAnswer');
+  const error = document.getElementById('humanVerifyError');
+  const challengeBox = document.getElementById('humanVerifyChallengeBox');
+  const modalPanel = document.getElementById('humanVerifyPanel');
+  const progress = document.getElementById('humanVerifyProgress');
+  const statusTitle = document.getElementById('humanVerifyStatusTitle');
+  const statusSub = document.getElementById('humanVerifyStatusSub');
+  const verifyBtn = document.getElementById('submitHumanVerifyBtn');
+  if (!answerEl || !humanChallenge) return;
+  const userAnswer = Number(String(answerEl.value).trim());
+  if (!Number.isFinite(userAnswer) || userAnswer !== humanChallenge.answer) {
+    if (error) error.textContent = 'That answer is not correct. Please try again.';
+    if (challengeBox) {
+      challengeBox.classList.remove('verify-shake');
+      void challengeBox.offsetWidth;
+      challengeBox.classList.add('verify-shake');
+    }
+    answerEl.select();
+    return;
+  }
+  if (error) error.textContent = '';
+  if (verifyBtn) { verifyBtn.disabled = true; verifyBtn.textContent = 'Finalising...'; }
+  if (modalPanel) modalPanel.classList.add('verifying');
+  if (progress) progress.style.width = '100%';
+  if (statusTitle) statusTitle.textContent = 'Verification successful';
+  if (statusSub) statusSub.textContent = 'Redirecting you back to the report form.';
+
+  humanVerifyTimer = setTimeout(() => {
+    completeHumanVerification();
+    closeHumanVerificationModal();
+    scrollBackToReportForm();
+    showToast('✅ Human verification complete.');
+  }, 800);
+}
+
+function setupHumanVerification() {
+  const btn = document.getElementById('humanCheckBtn');
+  const cancelBtn = document.getElementById('cancelHumanVerifyBtn');
+  const submitBtn = document.getElementById('submitHumanVerifyBtn');
+  const answer = document.getElementById('humanVerifyAnswer');
+  const modal = document.getElementById('humanVerifyModal');
+  if (btn) btn.addEventListener('click', () => {
+    if (humanVerified) return;
+    startHumanVerificationFlow();
+  });
+  if (cancelBtn) cancelBtn.addEventListener('click', resetHumanVerification);
+  if (submitBtn) submitBtn.addEventListener('click', submitHumanVerificationAnswer);
+  if (answer) answer.addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitHumanVerificationAnswer();
+  });
+  if (modal) modal.addEventListener('click', e => {
+    // Keep the check intentional: only the Cancel button closes it, not backdrop clicks.
+    if (e.target === modal) e.preventDefault();
   });
 }
 
@@ -2241,7 +2464,7 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
   if(msg.length<5){showToast('Please select a valid update.');return;}
   if(msg.length>140){showToast('Keep the combined report under 140 characters.');return;}
   if(checkDuplicate(currentArea.key,msg)){showToast('Looks like a duplicate report.');return;}
-  if(!humanVerified){showToast('Please complete the human verification.');return;}
+  if(!humanVerified){showToast('Please complete the human verification.');startHumanVerificationFlow();return;}
 
   this.disabled=true;this.textContent='Submitting...';
   showLoader('Saving your report and updating the community counter...');
