@@ -1419,6 +1419,9 @@ function edgeFunctionUrl(name) {
 }
 
 async function callNgDataLocation(action, params={}) {
+  // Kept this function name so the existing website flow still works.
+  // The Supabase Edge Function named `ngdata-location` now reads from the free
+  // Nigeria GeoJSON dataset by Temi Kolawole instead of Nigeria GeoJSON.
   if (!supabaseReady || !SB_URL || !SB_KEY) return null;
   try {
     const res = await fetch(edgeFunctionUrl('ngdata-location'), {
@@ -1426,9 +1429,14 @@ async function callNgDataLocation(action, params={}) {
       headers: buildHeaders({ 'Accept': 'application/json' }),
       body: JSON.stringify({ action, ...params })
     });
-    if (!res.ok) return null;
-    return await res.json();
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.warn('Nigeria GeoJSON lookup failed:', payload || res.status);
+      return null;
+    }
+    return payload;
   } catch (e) {
+    console.warn('Nigeria GeoJSON lookup error:', e);
     return null;
   }
 }
@@ -2109,6 +2117,7 @@ function setSuggestionStatus(type, text) {
 }
 
 function getBestNgDataMatch(payload) {
+  // Backward-compatible name. The matches now come from the Nigeria GeoJSON dataset.
   const matches = payload && Array.isArray(payload.matches) ? payload.matches : [];
   return matches.find(m => m && m.name) || null;
 }
@@ -2136,7 +2145,7 @@ async function applyExternalLocationToSuggestionForm(match, rawQuery) {
   if (lga) await setSelectOption('sugLga', lga);
   if (noteEl && match) {
     const bits = [
-      'Found in NG Data Nigeria location API',
+      'Found in Nigeria GeoJSON location dataset',
       match.source_type ? `Source: ${match.source_type}` : '',
       match.latitude && match.longitude ? `Coordinates: ${match.latitude}, ${match.longitude}` : ''
     ].filter(Boolean);
@@ -2144,7 +2153,7 @@ async function applyExternalLocationToSuggestionForm(match, rawQuery) {
   }
 
   if (match) {
-    setSuggestionStatus('info', `We found “${name}” in the Nigeria location database. Please complete the remaining fields and submit it for admin review. If the LGA list does not load, you can still continue with the area name.`);
+    setSuggestionStatus('info', `We found “${name}” in the Nigeria GeoJSON location dataset. Please complete the remaining fields and submit it for admin review. If the LGA list does not load, you can still continue with the area name.`);
   } else {
     setSuggestionStatus('', '');
   }
@@ -2181,7 +2190,7 @@ async function doSearch(q) {
   if (matches.length > 1) { showSuggestions(matches.slice(0, 8)); return; }
 
   hideSuggestions();
-  showLoader('Checking wider Nigeria location database...', ACTION_LOADER_MIN_MS);
+  showLoader('Checking Nigeria GeoJSON location dataset...', ACTION_LOADER_MIN_MS);
 
   const externalPayload = await callNgDataLocation('search', { query: rawQuery });
   if (thisSearch !== searchRequestId) return;
@@ -2540,7 +2549,7 @@ async function loadLgasForState(state){
     renderLgaOptions(payload.lgas);
   } else if(el) {
     // Fallback: do not block the user when the LGA lookup is temporarily unavailable.
-    // The admin can still approve the area later, and NG Data metadata is saved with the suggestion.
+    // The admin can still approve the area later, and Nigeria GeoJSON metadata is saved with the suggestion.
     el.innerHTML='<option value="Not specified">LGA not available — continue with area name</option>';
     el.value='Not specified';
   }
@@ -2573,12 +2582,12 @@ document.getElementById('sugSubmitBtn').addEventListener('click', async function
     `Power situation: ${powerSituation}`,
     `Meter type: ${meterType}`,
     note ? `Note: ${note}` : '',
-    pendingExternalLocation ? `NG Data match: ${pendingExternalLocation.name}` : ''
+    pendingExternalLocation ? `Nigeria GeoJSON match: ${pendingExternalLocation.name}` : ''
   ].filter(Boolean).join(' | ');
   const sug={
     name,state,lga,disco:disco||null,description,
     area_type:areaType,power_situation:powerSituation,meter_type:meterType,note:note||null,
-    external_source: pendingExternalLocation ? 'ngdata.udeh.ng' : null,
+    external_source: pendingExternalLocation ? 'temikeezy/nigeria-geojson-data' : null,
     external_id: pendingExternalLocation ? String(pendingExternalLocation.external_id || pendingExternalLocation.id || '') : null,
     external_latitude: pendingExternalLocation && pendingExternalLocation.latitude != null ? Number(pendingExternalLocation.latitude) : null,
     external_longitude: pendingExternalLocation && pendingExternalLocation.longitude != null ? Number(pendingExternalLocation.longitude) : null,
