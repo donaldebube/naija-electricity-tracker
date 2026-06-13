@@ -533,6 +533,16 @@ input[type=range]:focus{box-shadow:none}
   background:var(--surface);border:1px solid var(--border);
   border-radius:var(--radius);padding:24px;text-align:left;
   box-shadow:var(--shadow);
+  scroll-margin-top:90px;
+}
+.suggest-card.auto-focus{
+  animation:suggestCardFocus 1.35s ease;
+  border-color:rgba(22,163,74,0.55);
+}
+@keyframes suggestCardFocus{
+  0%{transform:translateY(18px) scale(.985);box-shadow:0 0 0 rgba(22,163,74,0)}
+  42%{transform:translateY(0) scale(1.01);box-shadow:0 0 0 6px rgba(22,163,74,.10),0 18px 48px rgba(22,163,74,.18)}
+  100%{transform:translateY(0) scale(1);box-shadow:var(--shadow)}
 }
 .suggest-heading{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:var(--text);margin-bottom:6px}
 .suggest-intro{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px}
@@ -544,6 +554,7 @@ input[type=range]:focus{box-shadow:none}
 .sug-status{font-size:13px;margin-top:10px;min-height:18px}
 .sug-status.ok{color:#4ade80;font-weight:500}
 .sug-status.err{color:#f87171}
+.sug-status.info{color:#93c5fd;font-weight:500}
 
 /* ── TOAST ─────────────────────────────────────────────────────────────────── */
 .toast{
@@ -683,6 +694,7 @@ footer{
 [data-theme="light"] .nav-logo{box-shadow:0 0 10px rgba(22,163,74,0.2)}
 [data-theme="light"] .btn-search,[data-theme="light"] .btn-submit{box-shadow:0 2px 8px rgba(22,163,74,0.2)}
 [data-theme="light"] .sug-status.ok{color:#14532d}
+[data-theme="light"] .sug-status.info{color:#1d4ed8}
 [data-theme="light"] .rate-ok{color:#14532d}
 [data-theme="light"] .disco-info-row a{color:#14532d}
 
@@ -1317,6 +1329,25 @@ async function sbRpc(fn, args={}) {
     if (!res.ok) return null;
     return res.json();
   } catch(e) { return null; }
+}
+
+function edgeFunctionUrl(name) {
+  return String(SB_URL || '').replace(/\/+$/, '') + '/functions/v1/' + name;
+}
+
+async function callNgDataLocation(action, params={}) {
+  if (!supabaseReady || !SB_URL || !SB_KEY) return null;
+  try {
+    const res = await fetch(edgeFunctionUrl('ngdata-location'), {
+      method: 'POST',
+      headers: buildHeaders({ 'Accept': 'application/json' }),
+      body: JSON.stringify({ action, ...params })
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
 }
 
 // ─── SECURE ADMIN AUTH ───────────────────────────────────────────────────────
@@ -1970,19 +2001,120 @@ async function handleUpvote(id, idx) {
 }
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
-function doSearch(q) {
-  q = q.trim().toLowerCase();
-  if (!q) return;
-  const exact = AREAS.find(a => a.name.toLowerCase()===q || a.key===q || a.key.startsWith(q.replace(/[\s,]/g,'-')) || (a.name.toLowerCase()+', '+a.state.toLowerCase().split(' ')[0]).includes(q));
-  if (exact) { showArea(exact); hideSuggestions(); return; }
-  const matches = AREAS.filter(a => a.name.toLowerCase().includes(q) || a.state.toLowerCase().includes(q) || (a.lga||'').toLowerCase().includes(q) || a.key.includes(q.replace(/\s/g,'-')));
-  if (matches.length===1) { showArea(matches[0]); hideSuggestions(); return; }
-  if (matches.length>1) { showSuggestions(matches.slice(0,8)); return; }
+let searchRequestId = 0;
+let pendingExternalLocation = null;
+
+function scrollSuggestionFormIntoView() {
+  const card = document.querySelector('#emptyState .suggest-card');
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.remove('auto-focus');
+  void card.offsetWidth; // restart the highlight animation each time
+  card.classList.add('auto-focus');
+  setTimeout(() => card.classList.remove('auto-focus'), 1500);
+}
+
+function titleCase(value) {
+  return String(value || '').trim().split(/\s+/).map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
+}
+
+function setSuggestionStatus(type, text) {
+  const el = document.getElementById('sugStatus');
+  if (!el) return;
+  el.className = 'sug-status ' + (type || '');
+  el.textContent = text || '';
+}
+
+function getBestNgDataMatch(payload) {
+  const matches = payload && Array.isArray(payload.matches) ? payload.matches : [];
+  return matches.find(m => m && m.name) || null;
+}
+
+async function setSelectOption(selectId, value, loadOptionsFn=null) {
+  const el = document.getElementById(selectId);
+  if (!el || !value) return;
+  const clean = String(value).trim();
+  if (loadOptionsFn) await loadOptionsFn(clean);
+  const exists = Array.from(el.options || []).some(o => String(o.value).toLowerCase() === clean.toLowerCase());
+  if (!exists) el.insertAdjacentHTML('beforeend', `<option value="${escapeHTML(clean)}">${escapeHTML(clean)}</option>`);
+  el.value = Array.from(el.options || []).find(o => String(o.value).toLowerCase() === clean.toLowerCase())?.value || clean;
+}
+
+async function applyExternalLocationToSuggestionForm(match, rawQuery) {
+  pendingExternalLocation = match || null;
+  const name = match?.name || titleCase(rawQuery || '');
+  const state = match?.state || match?.state_name || '';
+  const lga = match?.lga || match?.local_government || '';
+
+  const nameEl = document.getElementById('sugName');
+  const noteEl = document.getElementById('sugNote');
+  if (nameEl) nameEl.value = name;
+  if (state) await setSelectOption('sugState', cleanStateName(state), loadLgasForState);
+  if (lga) await setSelectOption('sugLga', lga);
+  if (noteEl && match) {
+    const bits = [
+      'Found in NG Data Nigeria location API',
+      match.source_type ? `Source: ${match.source_type}` : '',
+      match.latitude && match.longitude ? `Coordinates: ${match.latitude}, ${match.longitude}` : ''
+    ].filter(Boolean);
+    noteEl.value = bits.join(' | ').slice(0, 180);
+  }
+
+  if (match) {
+    setSuggestionStatus('info', `We found “${name}” in the Nigeria location database. Please complete the remaining fields and submit it for admin review.`);
+  } else {
+    setSuggestionStatus('', '');
+  }
+}
+
+function showAreaNotFound() {
   document.getElementById('resultArea').className = 'result-area';
   document.getElementById('emptyState').classList.add('show');
-  const nf = document.getElementById('sugName');
-  if (nf&&q) nf.value = q.split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ').split(',')[0].trim();
+}
+
+async function doSearch(q) {
+  const rawQuery = String(q || '').trim();
+  q = rawQuery.toLowerCase();
+  if (!q) return;
+
+  const thisSearch = ++searchRequestId;
+  pendingExternalLocation = null;
+
+  const exact = AREAS.find(a =>
+    a.name.toLowerCase() === q ||
+    a.key === q ||
+    a.key.startsWith(q.replace(/[\s,]/g, '-')) ||
+    (a.name.toLowerCase() + ', ' + a.state.toLowerCase().split(' ')[0]).includes(q)
+  );
+  if (exact) { showArea(exact); hideSuggestions(); return; }
+
+  const matches = AREAS.filter(a =>
+    a.name.toLowerCase().includes(q) ||
+    a.state.toLowerCase().includes(q) ||
+    (a.lga || '').toLowerCase().includes(q) ||
+    a.key.includes(q.replace(/\s/g, '-'))
+  );
+  if (matches.length === 1) { showArea(matches[0]); hideSuggestions(); return; }
+  if (matches.length > 1) { showSuggestions(matches.slice(0, 8)); return; }
+
   hideSuggestions();
+  showLoader('Checking wider Nigeria location database...', ACTION_LOADER_MIN_MS);
+
+  const externalPayload = await callNgDataLocation('search', { query: rawQuery });
+  if (thisSearch !== searchRequestId) return;
+
+  const externalMatch = getBestNgDataMatch(externalPayload);
+  showAreaNotFound();
+  await applyExternalLocationToSuggestionForm(externalMatch, rawQuery);
+
+  if (!externalMatch) {
+    const nf = document.getElementById('sugName');
+    if (nf && q) nf.value = titleCase(rawQuery).split(',')[0].trim();
+    setSuggestionStatus('', '');
+  }
+
+  hideLoader(0);
+  setTimeout(scrollSuggestionFormIntoView, 260);
 }
 
 function getDisplayStatus(area) {
@@ -2155,43 +2287,42 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
 
 // ─── NIGERIAN LOCATION DROPDOWNS + SUGGESTIONS ───────────────────────────────
 const FALLBACK_STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT Abuja','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
-const LGA_API_BASE = 'https://nga-states-lga.onrender.com';
-function cleanStateName(s){ return String(s||'').replace(/ State$/i,'').trim(); }
+function cleanStateName(s){ return String(s||'').replace(/ State$/i,'').replace(/^Federal Capital Territory$/i,'FCT Abuja').trim(); }
+function normalizeLocationListValue(item){ return typeof item === 'string' ? item : (item?.name || item?.state || item?.state_name || item?.lga || item?.local_government || ''); }
 function renderStateOptions(states=FALLBACK_STATES){
   const el=document.getElementById('sugState'); if(!el) return;
-  el.innerHTML='<option value="">Select state...</option>' + states.map(s=>`<option value="${escapeHTML(cleanStateName(s))}">${escapeHTML(cleanStateName(s))}</option>`).join('');
+  const unique = Array.from(new Set((states || FALLBACK_STATES).map(normalizeLocationListValue).map(cleanStateName).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+  el.innerHTML='<option value="">Select state...</option>' + unique.map(s=>`<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
 }
 function renderLgaOptions(lgas=[]){
   const el=document.getElementById('sugLga'); if(!el) return;
-  if(!lgas.length){el.innerHTML='<option value="">Select LGA...</option>';return;}
-  el.innerHTML='<option value="">Select LGA...</option>' + lgas.map(l=>`<option value="${escapeHTML(l)}">${escapeHTML(l)}</option>`).join('');
+  const unique = Array.from(new Set((lgas || []).map(normalizeLocationListValue).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+  if(!unique.length){el.innerHTML='<option value="">Select LGA...</option>';return;}
+  el.innerHTML='<option value="">Select LGA...</option>' + unique.map(l=>`<option value="${escapeHTML(l)}">${escapeHTML(l)}</option>`).join('');
 }
 async function initLocationDropdowns(){
   renderStateOptions();
-  try{
-    const res=await fetch(LGA_API_BASE+'/fetch');
-    if(res.ok){
-      const data=await res.json();
-      const states=Array.isArray(data) ? data : (data.states || data.data || []);
-      if(states.length) renderStateOptions(states.map(s=>typeof s==='string'?s:(s.name||s.state||s)));
-    }
-  }catch(e){ /* fallback states already shown */ }
+  const payload = await callNgDataLocation('states', {});
+  if(payload && Array.isArray(payload.states) && payload.states.length){
+    renderStateOptions(payload.states);
+  }
 }
 async function loadLgasForState(state){
   renderLgaOptions([]);
   if(!state) return;
-  try{
-    const res=await fetch(LGA_API_BASE+'/?state='+encodeURIComponent(cleanStateName(state)));
-    if(!res.ok) throw new Error('LGA API failed');
-    const data=await res.json();
-    const lgas=Array.isArray(data) ? data : (data.lgas || data.data || data.local_governments || []);
-    renderLgaOptions(lgas.map(l=>typeof l==='string'?l:(l.name||l.lga||l)).filter(Boolean));
-  }catch(e){
-    const el=document.getElementById('sugLga');
-    if(el) el.innerHTML='<option value="">LGA API unavailable — type area and submit</option>';
+  const el=document.getElementById('sugLga');
+  if(el) el.innerHTML='<option value="">Loading LGAs...</option>';
+  const payload = await callNgDataLocation('lgas', { state: cleanStateName(state) });
+  if(payload && Array.isArray(payload.lgas) && payload.lgas.length){
+    renderLgaOptions(payload.lgas);
+  } else if(el) {
+    el.innerHTML='<option value="">Could not load LGAs — continue with area name</option>';
   }
 }
-document.getElementById('sugState').addEventListener('change', e=>loadLgasForState(e.target.value));
+document.getElementById('sugState').addEventListener('change', e=>{
+  pendingExternalLocation = null;
+  loadLgasForState(e.target.value);
+});
 
 document.getElementById('sugSubmitBtn').addEventListener('click', async function(){
   const state=document.getElementById('sugState').value;
@@ -2212,9 +2343,20 @@ document.getElementById('sugSubmitBtn').addEventListener('click', async function
     `Area type: ${areaType}`,
     `Power situation: ${powerSituation}`,
     `Meter type: ${meterType}`,
-    note ? `Note: ${note}` : ''
+    note ? `Note: ${note}` : '',
+    pendingExternalLocation ? `NG Data match: ${pendingExternalLocation.name}` : ''
   ].filter(Boolean).join(' | ');
-  const sug={name,state,lga,disco:disco||null,description,area_type:areaType,power_situation:powerSituation,meter_type:meterType,note:note||null,review_status:'pending',submitted_at:new Date().toISOString()};
+  const sug={
+    name,state,lga,disco:disco||null,description,
+    area_type:areaType,power_situation:powerSituation,meter_type:meterType,note:note||null,
+    external_source: pendingExternalLocation ? 'ngdata.udeh.ng' : null,
+    external_id: pendingExternalLocation ? String(pendingExternalLocation.external_id || pendingExternalLocation.id || '') : null,
+    external_latitude: pendingExternalLocation && pendingExternalLocation.latitude != null ? Number(pendingExternalLocation.latitude) : null,
+    external_longitude: pendingExternalLocation && pendingExternalLocation.longitude != null ? Number(pendingExternalLocation.longitude) : null,
+    external_population: pendingExternalLocation && pendingExternalLocation.population != null ? Number(pendingExternalLocation.population) : null,
+    external_payload: pendingExternalLocation || null,
+    review_status:'pending',submitted_at:new Date().toISOString()
+  };
   let saved=false;
   if(supabaseReady){
     try{
@@ -2226,6 +2368,7 @@ document.getElementById('sugSubmitBtn').addEventListener('click', async function
   this.disabled=false;this.textContent='Submit suggestion';
   ['sugName','sugNote'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   ['sugState','sugLga','sugPowerSituation','sugDisco'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  pendingExternalLocation = null;
   sEl.className='sug-status ok';
   sEl.textContent=saved?'✅ Suggestion received! Admin will review it soon.':'Saved locally. Thank you!';
   refreshPublicCounters();hideLoader();
