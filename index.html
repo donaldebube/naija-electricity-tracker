@@ -855,6 +855,14 @@ footer{
 .admin-table-title{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);font-family:'Space Grotesk',sans-serif;font-weight:700}
 .admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th,.admin-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}.admin-table th{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}.admin-table td{color:var(--text2)}
 .admin-actions{display:flex;gap:8px;flex-wrap:wrap}.btn-mini{border:none;border-radius:9px;padding:7px 10px;font-size:12px;font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer}.btn-approve{background:rgba(22,163,74,.16);color:#86efac;border:1px solid rgba(22,163,74,.28)}.btn-reject{background:rgba(220,38,38,.12);color:#f87171;border:1px solid rgba(220,38,38,.24)}
+.audit-title-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.audit-filter-btn{border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);border-radius:999px;padding:7px 10px;font-size:11px;font-family:'Outfit',sans-serif;font-weight:800;cursor:pointer;transition:.18s ease}
+.audit-filter-btn:hover{border-color:rgba(134,239,172,.32);color:var(--text)}
+.audit-filter-btn.active{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.34);color:#86efac;box-shadow:0 0 0 3px rgba(34,197,94,.06)}
+.audit-status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;text-transform:capitalize;border:1px solid transparent}
+.audit-status.approved{color:#86efac;background:rgba(22,163,74,.13);border-color:rgba(22,163,74,.25)}
+.audit-status.rejected{color:#fca5a5;background:rgba(220,38,38,.11);border-color:rgba(220,38,38,.23)}
+.audit-meta{display:block;color:var(--text3);font-size:11px;margin-top:3px;line-height:1.35}.audit-admin{color:var(--text);font-weight:700}.admin-audit-wrap{margin-top:18px}
 .review-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:600;background:rgba(217,119,6,.12);color:#fbbf24;border:1px solid rgba(217,119,6,.25)}
 .top-areas-list{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.top-area-item{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13px}.top-area-name{color:var(--text);font-weight:600}.top-area-count{color:#86efac;font-weight:700}
 @media(max-width:860px){.admin-head{align-items:flex-start;flex-direction:column}.admin-head-actions{justify-content:flex-start}.impact-strip{grid-template-columns:1fr}.admin-grid{grid-template-columns:repeat(2,1fr)}.top-areas-list{grid-template-columns:1fr}.admin-table{min-width:760px}.admin-table-wrap{overflow-x:auto}}
@@ -1382,6 +1390,21 @@ nav{box-shadow:0 1px 0 rgba(255,255,255,.03),0 18px 55px rgba(0,0,0,.22)}
     <table class="admin-table">
       <thead><tr><th>Suggested area</th><th>Location</th><th>Power situation</th><th>DisCo</th><th>Submitted</th><th>Actions</th></tr></thead>
       <tbody id="adminSuggestionsBody"><tr><td colspan="6">Loading suggestions...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="admin-table-wrap admin-audit-wrap">
+    <div class="admin-table-title">
+      <span>Area review audit log</span>
+      <div class="audit-title-actions">
+        <button class="audit-filter-btn active" type="button" data-audit-filter="all">All</button>
+        <button class="audit-filter-btn" type="button" data-audit-filter="approved">Approved</button>
+        <button class="audit-filter-btn" type="button" data-audit-filter="rejected">Rejected</button>
+        <button class="btn-secondary" id="refreshAuditBtn" type="button">Refresh log</button>
+      </div>
+    </div>
+    <table class="admin-table">
+      <thead><tr><th>Status</th><th>Area</th><th>Location</th><th>Handled by</th><th>Date handled</th></tr></thead>
+      <tbody id="adminAuditBody"><tr><td colspan="5">Loading review history...</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -2751,6 +2774,7 @@ function closeAdmin(){
   document.getElementById('adminPanel').classList.remove('show');
 }
 function setText(id,val){const el=document.getElementById(id); if(el) el.textContent = (typeof val==='number'?val.toLocaleString():val);}
+let adminAuditFilter='all';
 async function loadAdminDashboard(){
   if(!supabaseReady){showToast('Connect Supabase first.');return;}
   if(!(await requireAdmin())) return;
@@ -2777,6 +2801,7 @@ async function loadAdminDashboard(){
   const topEl=document.getElementById('adminTopAreas');
   topEl.innerHTML=top.length?top.map(([key,count])=>{const a=AREAS.find(x=>x.key===key);return `<div class="top-area-item"><span class="top-area-name">${escapeHTML(a?a.name:key)}</span><span class="top-area-count">${count}</span></div>`;}).join(''):'<div style="color:var(--text3);font-size:13px">No reports yet.</div>';
   await loadPendingSuggestions();
+  await loadAreaReviewAudit();
   refreshPublicCounters();hideLoader();
 }
 async function loadPendingSuggestions(){
@@ -2795,6 +2820,81 @@ async function loadPendingSuggestions(){
     <td><div class="admin-actions"><button class="btn-mini btn-approve" onclick="approveSuggestion('${s.id}')">Approve</button><button class="btn-mini btn-reject" onclick="rejectSuggestion('${s.id}')">Reject</button></div></td>
   </tr>`).join('');
 }
+function formatAuditAction(action){
+  const value=String(action||'').toLowerCase();
+  if(value==='approved') return 'Approved';
+  if(value==='rejected') return 'Rejected';
+  return value ? value.charAt(0).toUpperCase()+value.slice(1) : 'Reviewed';
+}
+function renderAuditStatus(action){
+  const value=String(action||'').toLowerCase();
+  const safe=value==='approved'||value==='rejected'?value:'reviewed';
+  return `<span class="audit-status ${safe}">${escapeHTML(formatAuditAction(value))}</span>`;
+}
+function normalizeReviewAudit(row, source){
+  const action=String(row.action || row.review_status || '').toLowerCase();
+  return {
+    source,
+    suggestion_id:String(row.suggestion_id || row.id || ''),
+    action,
+    area_name:row.area_name || row.name || '—',
+    area_type:row.area_type || '',
+    state:row.state || '',
+    lga:row.lga || '',
+    disco:row.disco || '',
+    admin_email:row.admin_email || row.reviewed_by || '—',
+    admin_name:row.admin_name || '',
+    created_at:row.created_at || row.reviewed_at || row.submitted_at || null
+  };
+}
+function setAuditFilter(value){
+  adminAuditFilter=value || 'all';
+  document.querySelectorAll('[data-audit-filter]').forEach(btn=>btn.classList.toggle('active', btn.dataset.auditFilter===adminAuditFilter));
+  loadAreaReviewAudit();
+}
+async function loadAreaReviewAudit(){
+  const body=document.getElementById('adminAuditBody');
+  if(!body) return;
+  body.innerHTML='<tr><td colspan="5">Loading review history...</td></tr>';
+  const [auditRows, reviewedRows] = await Promise.all([
+    sbFetchAdmin('area_review_audit_log?select=*&order=created_at.desc&limit=100'),
+    sbFetchAdmin('suggestions?select=*&review_status=in.(approved,rejected)&order=reviewed_at.desc&limit=100')
+  ]);
+  const normalized=[];
+  const seen=new Set();
+  (Array.isArray(auditRows)?auditRows:[]).forEach(row=>{
+    const item=normalizeReviewAudit(row,'audit');
+    seen.add(`${item.suggestion_id}:${item.action}`);
+    normalized.push(item);
+  });
+  (Array.isArray(reviewedRows)?reviewedRows:[]).forEach(row=>{
+    const item=normalizeReviewAudit(row,'suggestions');
+    const key=`${item.suggestion_id}:${item.action}`;
+    if(!seen.has(key)) normalized.push(item);
+  });
+  const filtered=normalized
+    .filter(row=>adminAuditFilter==='all' || row.action===adminAuditFilter)
+    .sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0))
+    .slice(0,100);
+  if(!filtered.length){
+    body.innerHTML='<tr><td colspan="5">No approved or rejected area suggestions yet.</td></tr>';
+    return;
+  }
+  body.innerHTML=filtered.map(row=>{
+    const location=[row.lga,row.state].filter(Boolean).join(', ') || '—';
+    const admin=row.admin_name ? `${escapeHTML(row.admin_name)}<span class="audit-meta">${escapeHTML(row.admin_email)}</span>` : escapeHTML(row.admin_email || '—');
+    const source=row.source==='audit'?'Audit log':'Reviewed suggestion';
+    const detail=[row.area_type,row.disco && row.disco !== 'Not sure' ? row.disco : ''].filter(Boolean).join(' · ');
+    return `<tr>
+      <td>${renderAuditStatus(row.action)}<span class="audit-meta">${escapeHTML(source)}</span></td>
+      <td><strong style="color:var(--text)">${escapeHTML(row.area_name)}</strong>${detail?`<span class="audit-meta">${escapeHTML(detail)}</span>`:''}</td>
+      <td>${escapeHTML(location)}</td>
+      <td><span class="audit-admin">${admin}</span></td>
+      <td>${row.created_at?timeAgo(row.created_at):'—'}<span class="audit-meta">${row.created_at?new Date(row.created_at).toLocaleString():''}</span></td>
+    </tr>`;
+  }).join('');
+}
+
 async function approveSuggestion(id){
   if(!(await requireAdmin())) return;
   showLoader('Securely approving area and publishing it to search...');
@@ -2814,6 +2914,8 @@ async function rejectSuggestion(id){
 const adminBtn=document.getElementById('adminBtn'); if(adminBtn) adminBtn.addEventListener('click',()=>openAdmin());
 const closeAdminBtn=document.getElementById('closeAdminBtn'); if(closeAdminBtn) closeAdminBtn.addEventListener('click',closeAdmin);
 const refreshAdminBtn=document.getElementById('refreshAdminBtn'); if(refreshAdminBtn) refreshAdminBtn.addEventListener('click',loadAdminDashboard);
+const refreshAuditBtn=document.getElementById('refreshAuditBtn'); if(refreshAuditBtn) refreshAuditBtn.addEventListener('click',loadAreaReviewAudit);
+document.querySelectorAll('[data-audit-filter]').forEach(btn=>btn.addEventListener('click',()=>setAuditFilter(btn.dataset.auditFilter)));
 const adminLoginBtn=document.getElementById('adminLoginBtn'); if(adminLoginBtn) adminLoginBtn.addEventListener('click',loginAdmin);
 const toggleAdminPasswordBtn=document.getElementById('toggleAdminPassword'); if(toggleAdminPasswordBtn) toggleAdminPasswordBtn.addEventListener('click',toggleAdminPasswordVisibility);
 const cancelAdminLoginBtn=document.getElementById('cancelAdminLoginBtn'); if(cancelAdminLoginBtn) cancelAdminLoginBtn.addEventListener('click',closeAdminAuthModal);
