@@ -413,14 +413,41 @@ input[type=range]::-webkit-slider-thumb{
   border:2px solid var(--bg);
 }
 input[type=range]:focus{box-shadow:none}
-.captcha-row{
-  display:flex;align-items:center;gap:10px;margin-bottom:10px;
-  padding:10px 13px;background:rgba(255,255,255,0.03);
-  border-radius:var(--radius-sm);border:1px solid var(--border);
+.human-check{margin:0 0 10px}
+.human-check-card{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:14px 15px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.025));
+  border:1px solid rgba(148,163,184,.22);border-radius:14px;color:var(--text);
+  font-family:'Outfit',sans-serif;cursor:pointer;text-align:left;position:relative;overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);transition:border-color .2s,box-shadow .2s,transform .15s,background .2s;
 }
-.captcha-q{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap}
-.captcha-input-wrap input{width:80px;margin-bottom:0}
-.captcha-hint{font-size:11px;color:var(--text3);flex:1}
+.human-check-card:hover{border-color:rgba(134,239,172,.42);box-shadow:0 0 0 3px rgba(22,163,74,.08);transform:translateY(-1px)}
+.human-check-card.checking{border-color:rgba(96,165,250,.45);background:linear-gradient(180deg,rgba(59,130,246,.09),rgba(255,255,255,.025))}
+.human-check-card.verified{border-color:rgba(22,163,74,.45);background:linear-gradient(180deg,rgba(22,163,74,.12),rgba(255,255,255,.025));box-shadow:0 0 0 3px rgba(22,163,74,.08)}
+.human-check-left{display:flex;align-items:center;gap:12px;min-width:0}
+.human-check-box{
+  width:28px;height:28px;border-radius:8px;border:2px solid rgba(148,163,184,.55);
+  background:rgba(15,17,23,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;
+}
+.human-check-card.checking .human-check-box{border-color:#60a5fa}
+.human-check-card.checking .human-check-box::after{
+  content:'';width:14px;height:14px;border-radius:50%;border:2px solid rgba(96,165,250,.28);border-top-color:#93c5fd;animation:spin .7s linear infinite;
+}
+.human-check-card.verified .human-check-box{border-color:#4ade80;background:linear-gradient(135deg,#16a34a,#0d9488);box-shadow:0 0 14px rgba(22,163,74,.35)}
+.human-check-card.verified .human-check-box::after{
+  content:'✓';font-size:16px;font-weight:800;color:#fff;line-height:1;
+}
+.human-check-copy{min-width:0}
+.human-check-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.25}
+.human-check-sub{font-size:11px;color:var(--text3);margin-top:3px;line-height:1.35}
+.human-check-brand{
+  display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;color:var(--text3);font-size:10px;font-weight:700;letter-spacing:.03em;
+}
+.human-check-shield{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:rgba(22,163,74,.13);border:1px solid rgba(22,163,74,.28);color:#86efac;font-size:13px}
+.human-check-card::before{
+  content:'';position:absolute;inset:-1px;transform:translateX(-110%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);transition:transform .65s ease;pointer-events:none;
+}
+.human-check-card.checking::before{transform:translateX(110%)}
 .rate-indicator{font-size:12px;margin-bottom:8px;min-height:18px}
 .rate-ok{color:#4ade80}
 .rate-warn{color:#fbbf24}
@@ -599,7 +626,7 @@ footer{
   .modal{padding:20px 16px}
   .modal-actions{flex-direction:column}
   .modal-actions button{width:100%}
-  .captcha-row{flex-wrap:wrap}
+  .human-check-card{align-items:flex-start}.human-check-brand{display:none}
   .toast{width:calc(100% - 32px);white-space:normal;text-align:center}
 }
 @media(max-width:380px){
@@ -687,7 +714,7 @@ footer{
 @keyframes loadSlide{0%{transform:translateX(-110%)}100%{transform:translateX(230%)}}
 @keyframes floatOrb{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 
-.impact-strip{margin:22px auto 0;max-width:720px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.impact-strip{margin:22px auto 0;max-width:720px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
 .impact-card{background:rgba(255,255,255,.055);border:1px solid var(--border2);border-radius:16px;padding:12px 14px;text-align:left;backdrop-filter:blur(12px)}
 .impact-num{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#86efac;line-height:1}
 .impact-label{font-size:11px;color:var(--text3);margin-top:5px;line-height:1.35}
@@ -927,7 +954,7 @@ nav{box-shadow:0 1px 0 rgba(255,255,255,.03),0 18px 55px rgba(0,0,0,.22)}
   <div class="quick-areas" id="quickAreas"></div>
 
   <div class="impact-strip" aria-label="NaijaLight activity summary">
-    <div class="impact-card"><div class="impact-num" id="reports24Count">—</div><div class="impact-label">reports submitted in the last 24 hours</div></div>
+    <div class="impact-card" id="reports24Card" style="display:none"><div class="impact-num" id="reports24Count">—</div><div class="impact-label">reports submitted in the last 24 hours</div></div>
     <div class="impact-card"><div class="impact-num" id="activeAreasCount">—</div><div class="impact-label">active areas being tracked</div></div>
     <div class="impact-card"><div class="impact-num" id="pendingSuggestionsCount">—</div><div class="impact-label">area suggestions awaiting review</div></div>
   </div>
@@ -1039,10 +1066,21 @@ nav{box-shadow:0 1px 0 rgba(255,255,255,.03),0 18px 55px rgba(0,0,0,.22)}
           <label class="field-label">Extra note (optional)</label>
           <textarea id="reportMsg" class="optional-note" placeholder="Street/landmark or useful detail, max 100 chars"></textarea>
           <div class="char-count" id="charCount">0 / 100</div>
-          <div class="captcha-row">
-            <span class="captcha-q" id="captchaQ"></span>
-            <div class="captcha-input-wrap"><input type="text" id="captchaInput" placeholder="=" maxlength="4"/></div>
-            <span class="captcha-hint">Answer to submit</span>
+          <label class="field-label">Human verification</label>
+          <div class="human-check" id="humanCheck">
+            <button class="human-check-card" id="humanCheckBtn" type="button" aria-pressed="false">
+              <span class="human-check-left">
+                <span class="human-check-box" aria-hidden="true"></span>
+                <span class="human-check-copy">
+                  <span class="human-check-title" id="humanCheckTitle">Verify you are human</span>
+                  <span class="human-check-sub" id="humanCheckSub">Click to complete a quick browser check before submitting.</span>
+                </span>
+              </span>
+              <span class="human-check-brand">
+                <span class="human-check-shield">⚡</span>
+                <span>NaijaLight</span>
+              </span>
+            </button>
           </div>
           <div class="rate-indicator" id="rateIndicator"></div>
           <div class="form-actions">
@@ -1423,7 +1461,7 @@ function slugify(value) {
   return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 }
 
-const INITIAL_LOADER_MIN_MS = 12000; // 12 seconds: keeps the welcome loader visible between 10–15 seconds.
+const INITIAL_LOADER_MIN_MS = 3000;  // 3 seconds: quick branded welcome loader.
 const ACTION_LOADER_MIN_MS = 900;    // Keep smaller in-app loaders quick so the website still feels responsive.
 let loaderShownAt = Date.now();
 let firstPageLoader = true;
@@ -1471,13 +1509,23 @@ async function sbCount(table, query='') {
   } catch(e) { return 0; }
 }
 
+function updateReports24Card(count) {
+  const card = document.getElementById('reports24Card');
+  if (!card) return;
+  const n = Number(count || 0);
+  // Stakeholder request: do not show this card until there are at least 50 reports in 24 hours.
+  card.style.display = n >= 50 ? '' : 'none';
+}
+
 async function refreshPublicCounters() {
   if (!supabaseReady) return;
   const rpcCounts = await sbRpc('get_public_counts', {});
   const row = Array.isArray(rpcCounts) ? rpcCounts[0] : rpcCounts;
   const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = Number(val || 0).toLocaleString(); };
   if (row && typeof row === 'object') {
-    set('reports24Count', row.reports_last_24h);
+    const reports24 = Number(row.reports_last_24h || 0);
+    set('reports24Count', reports24);
+    updateReports24Card(reports24);
     set('activeAreasCount', row.active_areas || AREAS.length);
     set('pendingSuggestionsCount', row.pending_suggestions);
     return;
@@ -1487,7 +1535,10 @@ async function refreshPublicCounters() {
     sbCount('reports', `created_at=gte.${encodeURIComponent(since24)}`),
     sbCount('areas', 'is_active=neq.false')
   ]);
-  set('reports24Count', r24); set('activeAreasCount', areas || AREAS.length); set('pendingSuggestionsCount', 0);
+  set('reports24Count', r24);
+  updateReports24Card(r24);
+  set('activeAreasCount', areas || AREAS.length);
+  set('pendingSuggestionsCount', 0);
 }
 
 // ─── DISCOS ───────────────────────────────────────────────────────────────────
@@ -1907,17 +1958,53 @@ document.getElementById('hoursSlider').addEventListener('input', function() {
   document.getElementById('hoursHint').textContent = h===0?'No supply today':h===24?'Full day supply!':h<=6?'Very low':'';
 });
 
-// ─── CAPTCHA ──────────────────────────────────────────────────────────────────
-let captchaAnswer = 0;
+// ─── HUMAN VERIFICATION ───────────────────────────────────────────────────────
+let humanVerified = false;
+let humanVerifyTimer = null;
+
 function generateCaptcha() {
-  const ops = [
-    ()=>{const a=Math.floor(Math.random()*12)+1,b=Math.floor(Math.random()*12)+1;captchaAnswer=a+b;return a+' + '+b+' = ?';},
-    ()=>{const a=Math.floor(Math.random()*9)+2,b=Math.floor(Math.random()*(a-1))+1;captchaAnswer=a-b;return a+' − '+b+' = ?';},
-    ()=>{const a=Math.floor(Math.random()*5)+2,b=Math.floor(Math.random()*5)+2;captchaAnswer=a*b;return a+' × '+b+' = ?';},
-  ];
-  const fn=ops[Math.floor(Math.random()*ops.length)];
-  document.getElementById('captchaQ').textContent=fn();
-  document.getElementById('captchaInput').value='';
+  // Kept the old function name so existing calls now reset the new Cloudflare-style check.
+  resetHumanVerification();
+}
+
+function resetHumanVerification() {
+  humanVerified = false;
+  if (humanVerifyTimer) clearTimeout(humanVerifyTimer);
+  const btn = document.getElementById('humanCheckBtn');
+  const title = document.getElementById('humanCheckTitle');
+  const sub = document.getElementById('humanCheckSub');
+  if (!btn || !title || !sub) return;
+  btn.classList.remove('checking','verified');
+  btn.setAttribute('aria-pressed','false');
+  title.textContent = 'Verify you are human';
+  sub.textContent = 'Click to complete a quick browser check before submitting.';
+}
+
+function completeHumanVerification() {
+  humanVerified = true;
+  const btn = document.getElementById('humanCheckBtn');
+  const title = document.getElementById('humanCheckTitle');
+  const sub = document.getElementById('humanCheckSub');
+  if (!btn || !title || !sub) return;
+  btn.classList.remove('checking');
+  btn.classList.add('verified');
+  btn.setAttribute('aria-pressed','true');
+  title.textContent = 'Verification complete';
+  sub.textContent = 'You can now submit your community report.';
+}
+
+function setupHumanVerification() {
+  const btn = document.getElementById('humanCheckBtn');
+  const title = document.getElementById('humanCheckTitle');
+  const sub = document.getElementById('humanCheckSub');
+  if (!btn || !title || !sub) return;
+  btn.addEventListener('click', () => {
+    if (humanVerified || btn.classList.contains('checking')) return;
+    btn.classList.add('checking');
+    title.textContent = 'Checking your browser...';
+    sub.textContent = 'Please wait a moment while we confirm this request.';
+    humanVerifyTimer = setTimeout(completeHumanVerification, 900 + Math.floor(Math.random() * 450));
+  });
 }
 
 // ─── RATE LIMITING ────────────────────────────────────────────────────────────
@@ -1958,8 +2045,7 @@ document.getElementById('submitBtn').addEventListener('click', async function() 
   if(msg.length<5){showToast('Please select a valid update.');return;}
   if(msg.length>140){showToast('Keep the combined report under 140 characters.');return;}
   if(checkDuplicate(currentArea.key,msg)){showToast('Looks like a duplicate report.');return;}
-  const captchaVal=parseInt(document.getElementById('captchaInput').value.trim(),10);
-  if(isNaN(captchaVal)||captchaVal!==captchaAnswer){showToast('Incorrect answer — try again.');generateCaptcha();return;}
+  if(!humanVerified){showToast('Please complete the human verification.');return;}
 
   this.disabled=true;this.textContent='Submitting...';
   showLoader('Saving your report and updating the community counter...');
@@ -2185,6 +2271,7 @@ if(SB_URL&&SB_KEY){supabaseReady=true;document.getElementById('setupBanner').cla
 // Clear any old session/local caches on load so fresh data always comes from Supabase
 try { sessionStorage.removeItem('nl_areas_cache'); } catch(e) {}
 loadAreas();
+setupHumanVerification();
 generateCaptcha();
 
 // ─── THEME TOGGLE ─────────────────────────────────────────────────────────────
